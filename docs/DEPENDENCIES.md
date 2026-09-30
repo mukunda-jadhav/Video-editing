@@ -4,15 +4,14 @@ Implementation record: 30 September 2026. `pubspec.yaml`, `pubspec.lock` and And
 
 | Dependency | Version | Use |
 |---|---:|---|
-| Flutter / Dart | 3.41.9 / 3.11.5 baseline | UI/runtime, Canvas and isolates |
+| Flutter / Dart | 3.41.9 / 3.11.5 baseline | UI/runtime, native texture Canvas |
 | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod/versions/3.3.2) | 3.3.2 | Shared state and injection |
 | [go_router](https://pub.dev/packages/go_router/versions/17.5.0) | 17.5.0 | Routes/navigation shell |
 | [file_picker](https://pub.dev/packages/file_picker/versions/13.1.0) | 13.1.0 | User-selected local media |
-| [image](https://pub.dev/packages/image/versions/4.10.1) | 4.10.1 | Raster filters/codecs |
+| [image](https://pub.dev/packages/image/versions/4.10.1) | 4.10.1 | Local fixture/image codecs |
 | [path](https://pub.dev/packages/path/versions/1.9.1) | 1.9.1 | Filesystem paths |
 | [path_provider](https://pub.dev/packages/path_provider/versions/2.1.6) | 2.1.6 | Private/temp directories |
-| [shared_preferences](https://pub.dev/packages/shared_preferences/versions/2.5.5) | 2.5.5 | Mock receipt and consent |
-| [video_player](https://pub.dev/packages/video_player/versions/2.11.1) | 2.11.1 | Rendered preview playback |
+| [video_player](https://pub.dev/packages/video_player/versions/2.11.1) | 2.11.1 | Original-source live preview and composed playback |
 | [ffmpeg_kit_flutter_new_full](https://pub.dev/packages/ffmpeg_kit_flutter_new_full/versions/2.5.2) | 2.5.2 | FFmpeg/FFprobe video pipeline |
 | [ONNX Runtime Android](https://onnxruntime.ai/docs/tutorials/mobile/deploy-android.html) | 1.30.0 (Gradle) | Native model inference |
 | flutter_test / integration_test | Flutter SDK | Unit/widget/device testing |
@@ -48,4 +47,4 @@ These fonts come from the [Google Fonts repository](https://github.com/google/fo
 
 ## Maintenance
 
-Keep the lockfile; check maintenance, SDK/Android constraints and licenses before upgrading, then run tests/device workflows. Native FFmpeg/ONNX need ABI, page-size and distribution checks. Future store/ad packages belong behind current interfaces with configured/tested adapters. Supabase stays optional for verified Premium accounts and has no editing-media access.
+Keep the lockfile; check maintenance, SDK/Android constraints and licenses before upgrading, then run tests/device workflows. Native FFmpeg/ONNX need ABI, page-size and distribution checks. Version 1.1 removes purchase/advertising/verification adapters and shared_preferences. All current editing features are free. No account/backend configuration is needed.

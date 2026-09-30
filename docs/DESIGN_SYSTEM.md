@@ -1,37 +1,18 @@
-# FrameLab design system
+# FrameLab 1.1 editor design
 
-Original dark, beginner-friendly Android creative studio. Local UI/UX design research informed responsive layout, touch targets and contrast. The broad search's motion-heavy portfolio recommendations were adapted to a lightweight editor: no looping animation, remote fonts, videos, blur-heavy backgrounds or borrowed product assets.
-
-## Tokens
-
-`lib/core/theme/app_theme.dart` is the executable source of truth.
+Near-black surfaces, cyan actions, white content and subdued separators. The interface prioritizes a visible canvas, direct manipulation and short labelled tools. Flutter Material controls preserve touch feedback, accessible labels and reduced-motion settings. Original vector template artwork and bundled fonts keep the app offline.
 
 | Role | Color |
 |---|---|
-| Background | `#101116` |
-| Surface | `#1A1C24` |
-| Raised surface | `#232630` |
-| Primary lavender | `#B4A0FF` |
-| Accent lime | `#D4EF89` |
-| Main text | `#F5F3FA` |
-| Secondary text | `#ACACBD` |
-| Decorative separator | `#363845` |
+| Background | #0D0D10 |
+| Surface | #18181C |
+| Raised | #242429 |
+| Action / selection | #40E0D0 |
+| Text | #F6F6F8 |
+| Secondary | #A6A6AE |
 
-System sans-serif typography and five bundled document font families work on first launch offline. Material icons and original canvas compositions are bundled; no stock media, proprietary UI assets, CDN, or runtime font download. Artwork text is decorative and excluded from semantics; template controls provide readable semantic descriptions.
+Home opens with New project, photo/video/template shortcuts and local projects. Navigation is Home / Projects / Templates. There are no purchase, account or advertising screens.
 
-## Layout and interaction
+Photo source textures are cached and edited by a live Canvas painter. Video uses the original file in the native video player with live color/crop/layout overlays and a seekable sequence timeline. Expensive composition work is explicit, and export uses the saved recipe. Complex transitions and music mixing still use the exact composed-preview/export path.
 
-- 24dp phone gutters, 1048dp bounded home content; 4/8dp spacing rhythm.
-- Creation cards flow to a column on narrow screens or large system type.
-- Home / Projects / Pro bottom navigation preserves tab scroll state.
-- Content scrolls around Android safe areas; no orientation lock.
-- Android controls target at least 48dp. All actions have Material feedback.
-- Static original template previews have horizontal scroll with a visible Explore alternative.
-- No custom perpetual animations; platform Material motion defaults, and tests include reduced-motion settings.
-- The app uses the requested dark theme throughout home, library, editors and settings.
-
-## Editor interaction
-
-Photo editing keeps the canvas above a labelled bottom toolbar, with undo/redo and export in the header. Layer selection opens move/size/rotation/order controls, and text entry uses a focused dialog. Video editing uses a selectable clip timeline, trim controls, canvas crop/zoom controls and a rendered-preview player. Reorder buttons provide an alternative to dragging. Tool panels scroll on small screens; large text increases their height instead of clipping labels. Expensive operations expose progress and cancellation or failure feedback.
-
-Preview and export share each editor's recipe. Video playback requires rendering a 480p preview after changes. Guest workflows do not open an account form; only Buy does. Locked tools explain the Premium requirement while leaving free editing accessible.
+Controls use at least 48dp touch targets. Tool panels scroll independently of the preview, and large system text is tested. No remote assets or proprietary product assets are used.

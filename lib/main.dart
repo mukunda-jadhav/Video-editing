@@ -8,7 +8,6 @@ import 'app/providers.dart';
 import 'core/theme/app_theme.dart';
 import 'core/config/bundled_licenses.dart';
 import 'features/projects/data/local_project_repository.dart';
-import 'features/entitlements/data/local_mock_entitlement_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,15 +18,12 @@ Future<void> main() async {
     final support = await getApplicationSupportDirectory();
     final root = Directory(p.join(support.path, 'projects'));
     await root.create(recursive: true);
-    final entitlement = LocalMockEntitlementRepository();
-    await entitlement.initialize();
     runApp(
       ProviderScope(
         overrides: [
           projectRepositoryProvider.overrideWithValue(
             LocalProjectRepository(root),
           ),
-          entitlementRepositoryProvider.overrideWithValue(entitlement),
         ],
         child: const FrameLabApp(),
       ),

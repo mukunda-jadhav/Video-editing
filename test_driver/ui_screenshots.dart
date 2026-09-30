@@ -16,7 +16,7 @@ Future<void> main() async {
         'docs/screenshots',
       ).create(recursive: true);
       await File(
-        '${output.path}/phase10-$name.png',
+        '${output.path}/v11-$name.png',
       ).writeAsBytes(bytes, flush: true);
       return true;
     },

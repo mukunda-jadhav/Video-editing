@@ -3,16 +3,16 @@ import 'package:flutter/services.dart';
 
 /// Shared visual tokens; editor surfaces use the same system as the launcher.
 abstract final class AppColors {
-  static const background = Color(0xFF101116);
-  static const surface = Color(0xFF1A1C24);
-  static const surfaceRaised = Color(0xFF232630);
-  static const primary = Color(0xFFB4A0FF);
-  static const accent = Color(0xFFD4EF89);
-  static const text = Color(0xFFF5F3FA);
-  static const muted = Color(0xFFACACBD);
-  static const border = Color(0xFF363845);
-  static const onAccent = Color(0xFF20261A);
-  static const onPrimary = Color(0xFF241E38);
+  static const background = Color(0xFF0D0D10);
+  static const surface = Color(0xFF18181C);
+  static const surfaceRaised = Color(0xFF242429);
+  static const primary = Color(0xFF40E0D0);
+  static const accent = Color(0xFF40E0D0);
+  static const text = Color(0xFFF6F6F8);
+  static const muted = Color(0xFFA6A6AE);
+  static const border = Color(0xFF36363D);
+  static const onAccent = Color(0xFF082825);
+  static const onPrimary = Color(0xFF082825);
   static const error = Color(0xFFFFB4AB);
   static const coral = Color(0xFFFCA98D);
   static const sky = Color(0xFFA9D7E4);
@@ -39,14 +39,14 @@ abstract final class AppTheme {
     return base.copyWith(
       textTheme: base.textTheme.copyWith(
         headlineLarge: const TextStyle(
-          fontSize: 38,
+          fontSize: 32,
           fontWeight: FontWeight.w700,
           height: 1.1,
           letterSpacing: -1.4,
           color: AppColors.text,
         ),
         headlineMedium: const TextStyle(
-          fontSize: 28,
+          fontSize: 26,
           fontWeight: FontWeight.w700,
           height: 1.2,
           letterSpacing: -.7,

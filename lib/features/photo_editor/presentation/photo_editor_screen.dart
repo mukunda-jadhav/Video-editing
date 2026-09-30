@@ -14,16 +14,12 @@ class PhotoEditorScreen extends StatefulWidget {
     super.key,
     this.initialData,
     required this.onSave,
-    required this.ensurePro,
-    required this.isPro,
     required this.removeBackground,
     required this.exportBytes,
     required this.pickImage,
   });
   final Map<String, dynamic>? initialData;
   final Future<void> Function(Map<String, dynamic>, String, String?) onSave;
-  final Future<bool> Function() ensurePro;
-  final bool isPro;
   final Future<String> Function(String) removeBackground;
   final Future<String> Function(Uint8List, String) exportBytes;
   final Future<String?> Function() pickImage;
@@ -36,20 +32,20 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     with WidgetsBindingObserver {
   late PhotoDocument _document;
   late PhotoHistory _history;
-  late bool _premium;
   PhotoComposition? _composition;
   String _tool = 'Adjust';
   String? _selectedId;
   bool _busy = false;
-  bool _rendering = false;
-  bool _pendingRender = false;
+  bool _loadingMedia = false;
+  bool _pendingMedia = false;
   bool _saving = false;
   bool _allowExit = false;
   String? _error;
   int _revision = 0;
   int _editVersion = 0;
   int _savedVersion = 0;
-  Timer? _renderTimer;
+  final _previewCache = PhotoPreviewCache(maxEdge: 1200);
+  String? _mediaKey;
   Timer? _saveTimer;
   Future<void>? _saveFuture;
   Size _canvasSize = Size.zero;
@@ -90,7 +86,6 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     super.initState();
     _document = PhotoDocument.fromJson(widget.initialData ?? {});
     _history = PhotoHistory(_document);
-    _premium = widget.isPro;
     WidgetsBinding.instance.addObserver(this);
     if (widget.initialData != null) {
       _editVersion = 1;
@@ -99,13 +94,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         () => unawaited(_save()),
       );
     }
-    _requestRender();
-  }
-
-  @override
-  void didUpdateWidget(covariant PhotoEditorScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isPro != widget.isPro) _premium = widget.isPro;
+    _requestMedia();
   }
 
   @override
@@ -117,9 +106,9 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
 
   @override
   void dispose() {
-    _renderTimer?.cancel();
     _saveTimer?.cancel();
     _composition?.dispose();
+    _previewCache.dispose();
     _canvasFocus.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -130,10 +119,14 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void _change(VoidCallback change, {bool raster = false, bool commit = true}) {
+  void _change(VoidCallback change, {bool media = false, bool commit = true}) {
     setState(change);
-    if (commit) _commit();
-    if (raster) _requestRender();
+    if (commit) {
+      _commit();
+    } else {
+      _saveTimer?.cancel();
+    }
+    if (media) _requestMedia();
   }
 
   void _commit() {
@@ -148,23 +141,23 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     setState(() {});
   }
 
-  void _requestRender() {
+  void _requestMedia() {
+    final key = _previewCache.mediaKey(_document);
+    if (key == _mediaKey) return;
+    _mediaKey = key;
     _revision++;
-    _renderTimer?.cancel();
-    _renderTimer = Timer(const Duration(milliseconds: 180), () {
-      _pendingRender = true;
-      if (!_rendering) unawaited(_render());
-    });
+    _pendingMedia = true;
+    if (!_loadingMedia) unawaited(_loadMedia());
   }
 
-  Future<void> _render() async {
+  Future<void> _loadMedia() async {
     if (!mounted) return;
-    setState(() => _rendering = true);
-    while (_pendingRender && mounted) {
-      _pendingRender = false;
+    setState(() => _loadingMedia = true);
+    while (_pendingMedia && mounted) {
+      _pendingMedia = false;
       final revision = _revision;
       try {
-        final next = await preparePhoto(_document.clone(), maxEdge: 960);
+        final next = await _previewCache.prepare(_document.clone());
         if (!mounted || revision != _revision) {
           next.dispose();
           continue;
@@ -177,11 +170,14 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         previous?.dispose();
       } catch (error) {
         if (mounted && revision == _revision) {
-          setState(() => _error = error.toString());
+          setState(() {
+            _mediaKey = null;
+            _error = error.toString();
+          });
         }
       }
     }
-    if (mounted) setState(() => _rendering = false);
+    if (mounted) setState(() => _loadingMedia = false);
   }
 
   Future<void> _save({bool feedback = false}) async {
@@ -281,7 +277,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         _document.cropRight = _document.cropBottom = 1;
       }
       _commit();
-      _requestRender();
+      _requestMedia();
     });
   }
 
@@ -297,26 +293,18 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     }
   }
 
-  Future<bool> _requirePro({bool recheck = false}) async {
-    if (_premium && !recheck) return true;
-    final granted = await widget.ensurePro();
-    if (mounted && granted) setState(() => _premium = true);
-    return granted;
-  }
-
   Future<void> _removeBackground() async {
     if (_document.imagePath == null) {
       _message('Import a photo first.');
       return;
     }
-    if (!await _requirePro() || !mounted) return;
     await _run(() async {
       final path = await widget.removeBackground(_document.imagePath!);
       if (!mounted) return;
       _document.imagePath = path;
       _document.backgroundColor = 0x00000000;
       _commit();
-      _requestRender();
+      _requestMedia();
       _message(
         'Background removed on your device. Pick a color or image to replace it.',
       );
@@ -324,7 +312,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
   }
 
   Future<void> _export() async {
-    final highQuality = await showModalBottomSheet<bool>(
+    final export = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -339,20 +327,14 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'PNG keeps every layer crisp and preserves transparency.',
-              ),
+              const Text('PNG keeps layers crisp and preserves transparency.'),
               const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.image_outlined),
-                title: const Text('Standard · free'),
-                subtitle: const Text('Original size up to 1920 px'),
-                onTap: () => Navigator.pop(context, false),
-              ),
-              ListTile(
                 leading: const Icon(Icons.high_quality_outlined),
-                title: const Text('High resolution · Pro'),
-                subtitle: const Text('Original canvas size up to 4096 px'),
+                title: const Text('High resolution PNG'),
+                subtitle: Text(
+                  '${_document.width} × ${_document.height} · up to 4096 px',
+                ),
                 onTap: () => Navigator.pop(context, true),
               ),
             ],
@@ -360,15 +342,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         ),
       ),
     );
-    if (highQuality == null || !mounted) return;
-    if ((highQuality || _document.usesPremiumAssets) &&
-        !await _requirePro(recheck: true)) {
-      return;
-    }
-    if (!mounted) return;
+    if (export != true || !mounted) return;
     await _run(() async {
       await _save();
-      final bytes = await exportPhoto(_document.clone(), premium: highQuality);
+      final bytes = await exportPhoto(_document.clone());
       final location = await widget.exportBytes(
         bytes,
         'FrameLab_${DateTime.now().millisecondsSinceEpoch}.png',
@@ -581,7 +558,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
       _selectedId = null;
       _editVersion++;
     });
-    _requestRender();
+    _requestMedia();
     _saveTimer?.cancel();
     _saveTimer = Timer(
       const Duration(milliseconds: 900),
@@ -646,12 +623,15 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
                                 unawaited(_text(layer: _selected));
                               }
                             },
-                            child: CustomPaint(
-                              painter: PhotoPainter(
-                                composition: _composition,
-                                document: _document,
-                                selectedId: _selectedId,
-                                showGrid: _tool == 'Crop',
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                key: const ValueKey('photo-live-preview'),
+                                painter: PhotoPainter(
+                                  composition: _composition,
+                                  document: _document,
+                                  selectedId: _selectedId,
+                                  showGrid: _tool == 'Crop',
+                                ),
                               ),
                             ),
                           ),
@@ -682,7 +662,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
                             ),
                           ),
                         ),
-                      if (_rendering && !_busy)
+                      if (_loadingMedia && !_busy)
                         const Align(
                           alignment: Alignment.topCenter,
                           child: LinearProgressIndicator(minHeight: 2),
@@ -874,9 +854,8 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     double value,
     double min,
     double max,
-    ValueChanged<double> setter, {
-    bool raster = true,
-  }) => Row(
+    ValueChanged<double> setter,
+  ) => Row(
     children: [
       SizedBox(
         width: math.min(128, MediaQuery.textScalerOf(context).scale(84)),
@@ -891,8 +870,8 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           min: min,
           max: max,
           label: value.toStringAsFixed(2),
-          onChanged: (value) =>
-              _change(() => setter(value), raster: raster, commit: false),
+          key: ValueKey('photo-slider-$label'),
+          onChanged: (value) => _change(() => setter(value), commit: false),
           onChangeEnd: (_) => _commit(),
         ),
       ),
@@ -908,7 +887,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
 
   Widget _adjustments() => Column(
     children: [
-      _heading('Make it yours', 'Changes are non-destructive. Undo any time.'),
+      _heading('Adjust', 'Live preview · original photo stays unchanged.'),
       _slider(
         'Brightness',
         _document.brightness,
@@ -962,14 +941,13 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
               _document.height = width;
               _document.cropLeft = _document.cropTop = 0;
               _document.cropRight = _document.cropBottom = 1;
-            }, raster: true),
+            }),
           ),
           ActionChip(
             avatar: const Icon(Icons.flip),
             label: const Text('Flip'),
             onPressed: () => _change(
               () => _document.flipHorizontal = !_document.flipHorizontal,
-              raster: true,
             ),
           ),
           ActionChip(
@@ -977,7 +955,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
             onPressed: () => _change(() {
               _document.cropLeft = _document.cropTop = 0;
               _document.cropRight = _document.cropBottom = 1;
-            }, raster: true),
+            }),
           ),
         ],
       ),
@@ -1021,14 +999,12 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         runSpacing: 8,
         children: ['Original', 'Noir', 'Warm', 'Cool', 'Fade', 'Vivid', 'Sepia']
             .map((name) {
-              final pro = PhotoDocument.premiumFilters.contains(name);
               return ChoiceChip(
                 selected: _document.filter == name,
-                label: Text('$name${pro ? ' · Pro' : ''}'),
+                label: Text(name),
                 onSelected: (_) async {
-                  if (pro && !await _requirePro()) return;
                   if (mounted) {
-                    _change(() => _document.filter = name, raster: true);
+                    _change(() => _document.filter = name);
                   }
                 },
               );
@@ -1087,10 +1063,9 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           ])
             ActionChip(
               avatar: Icon(item.$2),
-              label: Text('${item.$1}${item.$1 == 'heart' ? ' · Pro' : ''}'),
+              label: Text(item.$1),
               onPressed: () async {
                 if (!_canAddLayer()) return;
-                if (item.$1 == 'heart' && !await _requirePro()) return;
                 if (!mounted) return;
                 _change(() {
                   final layer = PhotoLayer(
@@ -1131,7 +1106,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         children: [
           ActionChip(
             avatar: const Icon(Icons.auto_fix_high),
-            label: const Text('Remove background · Pro'),
+            label: const Text('Remove background'),
             onPressed: _removeBackground,
           ),
           ActionChip(
@@ -1143,7 +1118,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
             ActionChip(
               label: const Text('Clear background image'),
               onPressed: () =>
-                  _change(() => _document.backgroundPath = null, raster: true),
+                  _change(() => _document.backgroundPath = null, media: true),
             ),
         ],
       ),
@@ -1313,7 +1288,6 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           .01,
           .4,
           (value) => layer.fontSize = value,
-          raster: false,
         ),
         Wrap(
           spacing: 8,
@@ -1322,14 +1296,13 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
               ('Sans', 'StudioSans', false),
               ('Serif', 'StudioSerif', false),
               ('Mono', 'StudioMono', false),
-              ('Script · Pro', 'StudioScript', true),
-              ('Display · Pro', 'StudioDisplay', true),
+              ('Script', 'StudioScript', true),
+              ('Display', 'StudioDisplay', true),
             ])
               ChoiceChip(
                 label: Text(font.$1),
                 selected: layer.fontFamily == font.$2,
                 onSelected: (_) async {
-                  if (font.$3 && !await _requirePro()) return;
                   if (mounted) _change(() => layer.fontFamily = font.$2);
                 },
               ),
@@ -1341,47 +1314,18 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           ],
         ),
       ],
-      _slider(
-        'Horizontal',
-        layer.x,
-        -.8,
-        .95,
-        (v) => layer.x = v,
-        raster: false,
-      ),
-      _slider('Vertical', layer.y, -.8, .95, (v) => layer.y = v, raster: false),
-      _slider(
-        'Width',
-        layer.width,
-        .02,
-        1.5,
-        (v) => layer.width = v,
-        raster: false,
-      ),
-      _slider(
-        'Height',
-        layer.height,
-        .02,
-        1.5,
-        (v) => layer.height = v,
-        raster: false,
-      ),
+      _slider('Horizontal', layer.x, -.8, .95, (v) => layer.x = v),
+      _slider('Vertical', layer.y, -.8, .95, (v) => layer.y = v),
+      _slider('Width', layer.width, .02, 1.5, (v) => layer.width = v),
+      _slider('Height', layer.height, .02, 1.5, (v) => layer.height = v),
       _slider(
         'Rotation',
         layer.rotation,
         -math.pi,
         math.pi,
         (v) => layer.rotation = v,
-        raster: false,
       ),
-      _slider(
-        'Opacity',
-        layer.opacity,
-        0,
-        1,
-        (v) => layer.opacity = v,
-        raster: false,
-      ),
+      _slider('Opacity', layer.opacity, 0, 1, (v) => layer.opacity = v),
     ],
   );
 
@@ -1552,9 +1496,7 @@ class _CanvasSizeDialogState extends State<_CanvasSizeDialog> {
           if (_error != null)
             Text(_error!, style: const TextStyle(color: AppColors.error)),
           const SizedBox(height: 12),
-          const Text(
-            '64–4096 px. Free exports fit within 1920 px; Pro exports retain up to 4096 px.',
-          ),
+          const Text('64–4096 px. Export preserves the full canvas size.'),
         ],
       ),
     ),

@@ -44,11 +44,14 @@ Future<void> tapVisible(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+Finder navigationTab(String label) =>
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
+
 void main() {
-  for (final tab in ['Projects', 'Pro']) {
+  for (final tab in ['Projects', 'Templates']) {
     testWidgets('system Back from $tab returns to Home', (tester) async {
       await pumpApp(tester);
-      await tester.tap(find.text(tab));
+      await tester.tap(navigationTab(tab));
       await tester.pumpAndSettle();
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
@@ -57,33 +60,34 @@ void main() {
     });
   }
 
-  testWidgets('guest can launch and browse Projects and Pro without signup', (
-    tester,
-  ) async {
-    await pumpApp(tester);
-    expect(find.text('FrameLab'), findsOneWidget);
-    expect(find.text('New photo'), findsOneWidget);
-    expect(find.text('New video'), findsOneWidget);
-    expect(find.byType(EditableText), findsNothing);
-    expect(find.byType(AlertDialog), findsNothing);
+  testWidgets(
+    'all tools launch and templates browse without accounts or purchases',
+    (tester) async {
+      await pumpApp(tester);
+      expect(find.text('FrameLab'), findsOneWidget);
+      expect(find.text('New photo'), findsOneWidget);
+      expect(find.text('New video'), findsOneWidget);
+      expect(find.byType(EditableText), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
 
-    await tester.tap(find.text('Projects'));
-    await tester.pumpAndSettle();
-    expect(find.text('A fresh canvas'), findsOneWidget);
+      await tester.tap(navigationTab('Projects'));
+      await tester.pumpAndSettle();
+      expect(find.text('A fresh canvas'), findsOneWidget);
 
-    await tester.tap(find.text('Pro'));
-    await tester.pumpAndSettle();
-    expect(find.text('You’re on Free. No account needed.'), findsOneWidget);
-    expect(find.text('₹39/month'), findsOneWidget);
-    expect(find.text('₹299/year'), findsOneWidget);
-    expect(find.byType(EditableText), findsNothing);
-    expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(navigationTab('Templates'));
+      await tester.pumpAndSettle();
+      expect(find.text('Find your starting point'), findsOneWidget);
+      expect(find.text('Pro'), findsNothing);
+      expect(find.textContaining('₹'), findsNothing);
+      expect(find.byType(EditableText), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
 
-    await tester.tap(find.text('Home'));
-    await tester.pumpAndSettle();
-    expect(find.text('New photo'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.tap(navigationTab('Home'));
+      await tester.pumpAndSettle();
+      expect(find.text('New photo'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final entry in [
     ('New photo', 'Untitled photo'),
@@ -101,9 +105,23 @@ void main() {
     });
   }
 
+  testWidgets('every template opens directly without purchase or signup', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(navigationTab('Templates'));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('Product ads'));
+    await tapVisible(tester, find.text('Daily essentials'));
+    expect(find.text('Daily essentials'), findsOneWidget);
+    expect(find.text('FrameLab Pro'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('roadmap remains reachable from settings', (tester) async {
     await pumpApp(tester);
-    await tapVisible(tester, find.text('Your studio. Your files.'));
+    await tapVisible(tester, find.byTooltip('Settings'));
     await tapVisible(tester, find.text('Build roadmap'));
     expect(find.text('The build roadmap'), findsOneWidget);
     expect(find.text('Architecture + home'), findsOneWidget);
@@ -118,7 +136,7 @@ void main() {
   ) async {
     final repository = _FailThenLoadProjects();
     await pumpApp(tester, projects: repository);
-    await tester.tap(find.text('Projects'));
+    await tester.tap(navigationTab('Projects'));
     await tester.pumpAndSettle();
     expect(find.text('Couldn’t load your projects'), findsOneWidget);
     expect(repository.calls, 1);
@@ -134,7 +152,7 @@ void main() {
   ) async {
     final repository = _PendingProjects();
     await pumpApp(tester, projects: repository);
-    await tester.tap(find.text('Projects'));
+    await tester.tap(navigationTab('Projects'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -157,20 +175,18 @@ void main() {
         (tester) async {
           await pumpApp(tester, size: size, textScale: textScale);
           expect(tester.takeException(), isNull);
-          await tapVisible(tester, find.text('Your studio. Your files.'));
+          await tapVisible(tester, find.byTooltip('Settings'));
           expect(find.text('Your studio settings'), findsOneWidget);
           expect(tester.takeException(), isNull);
           await tester.binding.handlePopRoute();
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Projects'));
+          await tester.tap(navigationTab('Projects'));
           await tester.pumpAndSettle();
           expect(find.text('Your projects'), findsOneWidget);
           expect(tester.takeException(), isNull);
-          await tester.tap(find.text('Pro'));
+          await tester.tap(navigationTab('Templates'));
           await tester.pumpAndSettle();
-          expect(find.text('₹39/month'), findsOneWidget);
-          await tester.ensureVisible(find.text('Local test mode · no charges'));
-          await tester.pumpAndSettle();
+          expect(find.text('Find your starting point'), findsOneWidget);
           expect(tester.takeException(), isNull);
         },
       );

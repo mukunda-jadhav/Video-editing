@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../features/entitlements/presentation/premium_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/projects/presentation/projects_screen.dart';
 import '../features/roadmap/presentation/roadmap_screen.dart';
@@ -24,8 +23,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   onCreatePhoto: () => context.push('/photo'),
                   onCreateVideo: () => context.push('/video'),
                   onViewProjects: () => context.go('/projects'),
-                  onViewTemplates: () => context.push('/templates'),
-                  onViewPremium: () => context.go('/premium'),
+                  onViewTemplates: () => context.go('/templates'),
                   onViewSettings: () => context.push('/settings'),
                 ),
               ),
@@ -43,9 +41,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/premium',
+                path: '/templates',
                 builder: (context, state) =>
-                    const _ReturnHomeOnBack(child: PremiumScreen()),
+                    const _ReturnHomeOnBack(child: TemplatesScreen()),
               ),
             ],
           ),
@@ -64,10 +62,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/templates',
-        builder: (context, state) => const TemplatesScreen(),
-      ),
-      GoRoute(
         path: '/edit/:id',
         builder: (context, state) =>
             EditorHost(projectId: state.pathParameters['id']),
@@ -75,13 +69,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
-      ),
-      GoRoute(
-        path: '/upgrade',
-        builder: (context, state) => Scaffold(
-          appBar: AppBar(title: const Text('FrameLab Pro')),
-          body: const PremiumScreen(),
-        ),
       ),
       GoRoute(
         path: '/roadmap',
@@ -127,9 +114,9 @@ class _AppShell extends StatelessWidget {
           label: 'Projects',
         ),
         NavigationDestination(
-          icon: Icon(Icons.auto_awesome_outlined),
-          selectedIcon: Icon(Icons.auto_awesome_rounded),
-          label: 'Pro',
+          icon: Icon(Icons.dashboard_outlined),
+          selectedIcon: Icon(Icons.dashboard_rounded),
+          label: 'Templates',
         ),
       ],
     ),

@@ -7,8 +7,6 @@ import '../../../core/widgets/page_content.dart';
 import '../data/local_project_repository.dart';
 import '../domain/project_document.dart';
 import '../domain/project_repository.dart';
-import '../../ads/presentation/ads_widgets.dart';
-import '../../ads/domain/ad_gateway.dart';
 
 class ProjectsScreen extends ConsumerStatefulWidget {
   const ProjectsScreen({super.key});
@@ -271,9 +269,6 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                 ),
               );
             },
-          ),
-          const SliverToBoxAdapter(
-            child: WorkspaceAdSlot(placement: AdPlacement.projects),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],

@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 7 — Local project save/load
 
 Status: **Durable repository, autosave and recovery flows implemented; process-death/storage-failure tests remain a device gate.**

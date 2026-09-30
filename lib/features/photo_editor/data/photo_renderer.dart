@@ -1,117 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 
 import '../domain/photo_document.dart';
-
-/// CPU filters and codecs run in a worker. Preview jobs are serialized by the UI.
-Future<Uint8List> renderPhotoRaster(Map<String, dynamic> request) async {
-  final document = PhotoDocument.fromJson(
-    Map<String, dynamic>.from(request['document'] as Map),
-  );
-  final edge = (request['maxEdge'] as int? ?? 1200).clamp(1, 4096);
-  final suppliedBytes = request['bytes'] as Uint8List?;
-  final bytes = suppliedBytes ?? await _readPhoto(document.imagePath!);
-  if (bytes.length > 60 * 1024 * 1024) {
-    throw const FormatException(
-      'This photo is larger than 60 MB. Resize it before importing.',
-    );
-  }
-  img.Decoder? decoder;
-  try {
-    decoder = img.findDecoderForData(bytes);
-  } on Object {
-    throw const FormatException('Use a JPEG, PNG, WebP, GIF or BMP photo.');
-  }
-  final info = decoder?.startDecode(bytes);
-  if (info == null) {
-    throw const FormatException('Use a JPEG, PNG, WebP, GIF or BMP photo.');
-  }
-  if (info.width * info.height > 32000000) {
-    throw const FormatException(
-      'Photos up to 32 megapixels are supported on this device.',
-    );
-  }
-  var result = decoder!.decodeFrame(0);
-  if (result == null) {
-    throw const FormatException('The selected photo could not be decoded.');
-  }
-  result = img.bakeOrientation(result);
-  if (document.rotation != 0) {
-    result = img.copyRotate(result, angle: document.rotation * 90);
-  }
-  if (document.flipHorizontal) result = img.flipHorizontal(result);
-  final left = (document.cropLeft * result.width).round().clamp(
-    0,
-    result.width - 1,
-  );
-  final top = (document.cropTop * result.height).round().clamp(
-    0,
-    result.height - 1,
-  );
-  result = img.copyCrop(
-    result,
-    x: left,
-    y: top,
-    width: ((document.cropRight - document.cropLeft) * result.width)
-        .round()
-        .clamp(1, result.width - left),
-    height: ((document.cropBottom - document.cropTop) * result.height)
-        .round()
-        .clamp(1, result.height - top),
-  );
-  final ratio = math.min(1.0, edge / math.max(result.width, result.height));
-  if (ratio < 1) {
-    result = img.copyResize(
-      result,
-      width: math.max(1, (result.width * ratio).round()),
-      height: math.max(1, (result.height * ratio).round()),
-      interpolation: img.Interpolation.linear,
-    );
-  }
-  result = img.adjustColor(
-    result,
-    brightness: document.brightness * math.pow(2, document.exposure),
-    contrast: document.contrast,
-    saturation: document.saturation,
-  );
-  switch (document.filter) {
-    case 'Noir':
-      result = img.grayscale(result);
-    case 'Fade':
-      result = img.adjustColor(
-        result,
-        contrast: .8,
-        saturation: .75,
-        brightness: 1.08,
-      );
-    case 'Vivid':
-      result = img.adjustColor(result, contrast: 1.15, saturation: 1.35);
-    case 'Warm':
-      for (final pixel in result) {
-        pixel.r = math.min(255, pixel.r * 1.12);
-        pixel.b *= .88;
-      }
-    case 'Cool':
-      for (final pixel in result) {
-        pixel.b = math.min(255, pixel.b * 1.12);
-        pixel.r *= .9;
-      }
-    case 'Sepia':
-      result = img.sepia(result);
-  }
-  if (document.blur > 0) {
-    result = img.gaussianBlur(
-      result,
-      radius: math.max(1, (document.blur * edge / 1080).round()),
-    );
-  }
-  return Uint8List.fromList(img.encodePng(result));
-}
 
 Future<ui.Image> decodePhoto(Uint8List bytes, {int? maxEdge}) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
@@ -140,35 +35,27 @@ Future<ui.Image> decodePhoto(Uint8List bytes, {int? maxEdge}) async {
   }
 }
 
-Future<Uint8List> _readPhoto(String path) async {
+Future<ui.Image> _loadPhoto(String path, int maxEdge) async {
   final file = File(path);
   if (await file.length() > 60 * 1024 * 1024) {
     throw const FormatException('Use a photo smaller than 60 MB.');
   }
-  return file.readAsBytes();
+  return decodePhoto(await file.readAsBytes(), maxEdge: maxEdge);
 }
 
-/// Native codec downsamples before the worker allocates its editable pixel map.
-Future<Uint8List> _boundedSource(PhotoDocument document, int maxEdge) async {
-  final cropScale = math
-      .min(
-        document.cropRight - document.cropLeft,
-        document.cropBottom - document.cropTop,
-      )
-      .clamp(.05, 1.0);
-  final edge = math.min(4096, (maxEdge / cropScale).ceil());
-  final image = await decodePhoto(
-    await _readPhoto(document.imagePath!),
-    maxEdge: edge,
-  );
-  try {
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (data == null) throw StateError('Photo decoding failed.');
-    return data.buffer.asUint8List();
-  } finally {
-    image.dispose();
-  }
-}
+Set<String> _assetPaths(PhotoDocument document) => {
+  if (document.backgroundPath != null) document.backgroundPath!,
+  ...document.layers
+      .where((layer) => layer.kind == 'image' && layer.path != null)
+      .map((layer) => layer.path!),
+};
+
+int _assetEdge(int maxEdge, int count) => math.min(
+  maxEdge,
+  math
+      .sqrt((maxEdge <= 1200 ? 4000000 : 12000000) / math.max(1, count))
+      .floor(),
+);
 
 class PhotoComposition {
   PhotoComposition(this.document, this.foreground, this.assets);
@@ -183,6 +70,62 @@ class PhotoComposition {
   }
 }
 
+/// Source textures are decoded once per media change, never per edit gesture.
+/// Clones share the same native texture; composition replacement is cheap.
+class PhotoPreviewCache {
+  PhotoPreviewCache({this.maxEdge = 1200});
+  final int maxEdge;
+  final Map<(String, int), ui.Image> _images = {};
+  bool _disposed = false;
+
+  String mediaKey(PhotoDocument document) {
+    final paths = _assetPaths(document).toList()..sort();
+    return jsonEncode([
+      document.imagePath,
+      paths,
+      _assetEdge(maxEdge, paths.length),
+    ]);
+  }
+
+  Future<PhotoComposition> prepare(PhotoDocument document) async {
+    final paths = _assetPaths(document);
+    final edge = _assetEdge(maxEdge, paths.length);
+    final needed = <(String, int)>{
+      if (document.imagePath != null) (document.imagePath!, maxEdge),
+      for (final path in paths) (path, edge),
+    };
+    for (final key in needed) {
+      if (_images.containsKey(key)) continue;
+      final image = await _loadPhoto(key.$1, key.$2);
+      if (_disposed) {
+        image.dispose();
+        throw StateError('Photo preview was closed.');
+      }
+      _images[key] = image;
+    }
+    for (final key in _images.keys.toList()) {
+      if (!needed.contains(key)) _images.remove(key)?.dispose();
+    }
+    return PhotoComposition(
+      document.clone(),
+      document.imagePath == null
+          ? null
+          : _images[(document.imagePath!, maxEdge)]!.clone(),
+      {for (final path in paths) path: _images[(path, edge)]!.clone()},
+    );
+  }
+
+  void dispose() {
+    _disposed = true;
+    for (final image in _images.values) {
+      image.dispose();
+    }
+    _images.clear();
+  }
+}
+
+/// Export uses exactly the same painter/effect matrices as the live preview,
+/// with higher-resolution native textures and bounded overlay memory.
 Future<PhotoComposition> preparePhoto(
   PhotoDocument document, {
   int maxEdge = 1200,
@@ -191,33 +134,21 @@ Future<PhotoComposition> preparePhoto(
   final assets = <String, ui.Image>{};
   try {
     if (document.imagePath != null) {
-      final bytes = await compute(renderPhotoRaster, {
-        'document': document.toJson(),
-        'maxEdge': maxEdge,
-        'bytes': await _boundedSource(document, maxEdge),
-      });
-      foreground = await decodePhoto(bytes);
-    }
-    final paths = {
-      if (document.backgroundPath != null) document.backgroundPath!,
-      ...document.layers
-          .where((layer) => layer.kind == 'image' && layer.path != null)
-          .map((layer) => layer.path!),
-    };
-    // Total decoded overlays stay below twelve million pixels during export.
-    final assetEdge = math.min(
-      maxEdge,
-      math
-          .sqrt(
-            (maxEdge <= 1200 ? 4000000 : 12000000) / math.max(1, paths.length),
+      final cropScale = math
+          .min(
+            document.cropRight - document.cropLeft,
+            document.cropBottom - document.cropTop,
           )
-          .floor(),
-    );
-    for (final path in paths) {
-      assets[path] = await decodePhoto(
-        await _readPhoto(path),
-        maxEdge: assetEdge,
+          .clamp(.05, 1.0);
+      foreground = await _loadPhoto(
+        document.imagePath!,
+        math.min(4096, (maxEdge / cropScale).ceil()),
       );
+    }
+    final paths = _assetPaths(document);
+    final edge = _assetEdge(maxEdge, paths.length);
+    for (final path in paths) {
+      assets[path] = await _loadPhoto(path, edge);
     }
     return PhotoComposition(document.clone(), foreground, assets);
   } catch (_) {
@@ -229,11 +160,8 @@ Future<PhotoComposition> preparePhoto(
   }
 }
 
-Future<Uint8List> exportPhoto(
-  PhotoDocument document, {
-  required bool premium,
-}) async {
-  final (width, height) = document.exportSize(premium: premium);
+Future<Uint8List> exportPhoto(PhotoDocument document) async {
+  final (width, height) = document.exportSize();
   final composition = await preparePhoto(
     document,
     maxEdge: math.max(width, height),
@@ -261,6 +189,147 @@ Future<Uint8List> exportPhoto(
   }
 }
 
+/// Crop coordinates refer to the rotated/flipped source, as in saved recipes.
+class PhotoImageGeometry {
+  PhotoImageGeometry(int width, int height, PhotoDocument document) {
+    rotatedSize = document.rotation.isOdd
+        ? Size(height.toDouble(), width.toDouble())
+        : Size(width.toDouble(), height.toDouble());
+    final left = (document.cropLeft * rotatedSize.width).round().clamp(
+      0,
+      rotatedSize.width.toInt() - 1,
+    );
+    final top = (document.cropTop * rotatedSize.height).round().clamp(
+      0,
+      rotatedSize.height.toInt() - 1,
+    );
+    crop = Rect.fromLTWH(
+      left.toDouble(),
+      top.toDouble(),
+      ((document.cropRight - document.cropLeft) * rotatedSize.width)
+          .round()
+          .clamp(1, rotatedSize.width.toInt() - left)
+          .toDouble(),
+      ((document.cropBottom - document.cropTop) * rotatedSize.height)
+          .round()
+          .clamp(1, rotatedSize.height.toInt() - top)
+          .toDouble(),
+    );
+  }
+  late final Size rotatedSize;
+  late final Rect crop;
+}
+
+const _identity = <double>[
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+];
+
+List<double> _multiply(List<double> after, List<double> before) {
+  final result = List<double>.filled(20, 0);
+  for (var row = 0; row < 4; row++) {
+    for (var col = 0; col < 4; col++) {
+      for (var i = 0; i < 4; i++) {
+        result[row * 5 + col] += after[row * 5 + i] * before[i * 5 + col];
+      }
+    }
+    result[row * 5 + 4] = after[row * 5 + 4];
+    for (var i = 0; i < 4; i++) {
+      result[row * 5 + 4] += after[row * 5 + i] * before[i * 5 + 4];
+    }
+  }
+  return result;
+}
+
+List<double> _adjustMatrix(
+  double brightness,
+  double contrast,
+  double saturation,
+) {
+  const luma = [.2126, .7152, .0722];
+  final matrix = List<double>.from(_identity);
+  for (var row = 0; row < 3; row++) {
+    for (var col = 0; col < 3; col++) {
+      matrix[row * 5 + col] =
+          brightness *
+          contrast *
+          ((1 - saturation) * luma[col] + (row == col ? saturation : 0));
+    }
+    matrix[row * 5 + 4] = brightness * 127.5 * (1 - contrast);
+  }
+  return matrix;
+}
+
+/// One affine color transform per frame. Alpha is preserved through all looks.
+List<double> photoColorMatrix(PhotoDocument document) {
+  final base = _adjustMatrix(
+    document.brightness * math.pow(2, document.exposure),
+    document.contrast,
+    document.saturation,
+  );
+  final List<double> look;
+  switch (document.filter) {
+    case 'Noir':
+      look = _adjustMatrix(1, 1, 0);
+    case 'Fade':
+      look = _adjustMatrix(1.08, .8, .75);
+    case 'Vivid':
+      look = _adjustMatrix(1, 1.15, 1.35);
+    case 'Warm':
+      look = List<double>.from(_identity)
+        ..[0] = 1.12
+        ..[12] = .88;
+    case 'Cool':
+      look = List<double>.from(_identity)
+        ..[0] = .9
+        ..[12] = 1.12;
+    case 'Sepia':
+      look = [
+        .393,
+        .769,
+        .189,
+        0,
+        0,
+        .349,
+        .686,
+        .168,
+        0,
+        0,
+        .272,
+        .534,
+        .131,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ];
+    default:
+      look = _identity;
+  }
+  return _multiply(look, base);
+}
+
 class PhotoPainter extends CustomPainter {
   PhotoPainter({
     required this.composition,
@@ -284,12 +353,7 @@ class PhotoPainter extends CustomPainter {
     final background = composition?.assets[document.backgroundPath];
     if (background != null) _drawImage(canvas, background, Offset.zero & size);
     if (composition?.foreground != null) {
-      _drawImage(
-        canvas,
-        composition!.foreground!,
-        Offset.zero & size,
-        fit: document.imageFit == 'contain' ? BoxFit.contain : BoxFit.cover,
-      );
+      _drawForeground(canvas, composition!.foreground!, size);
     }
     for (final layer in document.layers) {
       final rect = Rect.fromLTWH(
@@ -380,7 +444,7 @@ class PhotoPainter extends CustomPainter {
         canvas.drawRect(
           rect.inflate(3),
           Paint()
-            ..color = const Color(0xffb4a0ff)
+            ..color = const Color(0xff40e0d0)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2,
         );
@@ -404,6 +468,56 @@ class PhotoPainter extends CustomPainter {
         );
       }
     }
+    canvas.restore();
+  }
+
+  // Geometry and effects are applied to the cached texture in the raster
+  // pipeline. Moving a slider never decodes, encodes, or copies source pixels.
+  void _drawForeground(Canvas canvas, ui.Image image, Size size) {
+    final geometry = PhotoImageGeometry(image.width, image.height, document);
+    final fit = document.imageFit == 'contain' ? BoxFit.contain : BoxFit.cover;
+    final fitted = applyBoxFit(fit, geometry.crop.size, size);
+    final visible = Alignment.center.inscribe(fitted.source, geometry.crop);
+    final destination = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & size,
+    );
+    canvas.save();
+    canvas.clipRect(destination);
+    canvas.translate(destination.left, destination.top);
+    canvas.scale(
+      destination.width / visible.width,
+      destination.height / visible.height,
+    );
+    canvas.translate(-visible.left, -visible.top);
+    if (document.flipHorizontal) {
+      canvas.translate(geometry.rotatedSize.width, 0);
+      canvas.scale(-1, 1);
+    }
+    switch (document.rotation % 4) {
+      case 1:
+        canvas.translate(image.height.toDouble(), 0);
+        canvas.rotate(math.pi / 2);
+      case 2:
+        canvas.translate(image.width.toDouble(), image.height.toDouble());
+        canvas.rotate(math.pi);
+      case 3:
+        canvas.translate(0, image.width.toDouble());
+        canvas.rotate(-math.pi / 2);
+    }
+    final paint = Paint()
+      ..filterQuality = FilterQuality.medium
+      ..colorFilter = ColorFilter.matrix(photoColorMatrix(document));
+    if (document.blur > 0) {
+      final sigma = document.blur * math.max(image.width, image.height) / 1080;
+      canvas.saveLayer(
+        null,
+        Paint()
+          ..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      );
+    }
+    canvas.drawImage(image, Offset.zero, paint);
+    if (document.blur > 0) canvas.restore();
     canvas.restore();
   }
 

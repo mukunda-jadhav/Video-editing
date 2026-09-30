@@ -93,19 +93,6 @@ class PhotoDocument {
   /// Keeps compositing memory and editable overlay complexity bounded on phones.
   static const maxLayers = 48;
 
-  static const premiumFilters = {'Fade', 'Vivid', 'Sepia'};
-  static const premiumFonts = {'StudioScript', 'StudioDisplay'};
-  static const premiumStickers = {'heart'};
-
-  /// Check again before rendering a saved project after a subscription expires.
-  bool get usesPremiumAssets =>
-      premiumFilters.contains(filter) ||
-      layers.any(
-        (layer) =>
-            premiumStickers.contains(layer.kind) ||
-            (layer.kind == 'text' && premiumFonts.contains(layer.fontFamily)),
-      );
-
   Map<String, dynamic> toJson() => {
     'version': 1,
     'title': title,
@@ -133,8 +120,8 @@ class PhotoDocument {
   PhotoDocument clone() => PhotoDocument.fromJson(toJson());
 
   /// Limits output pixels while preserving the requested aspect ratio.
-  (int, int) exportSize({required bool premium}) {
-    final maxEdge = premium ? 4096 : 1920;
+  (int, int) exportSize() {
+    const maxEdge = 4096;
     final scale = math.min(1.0, maxEdge / math.max(width, height));
     return (
       math.max(1, (width * scale).round()),

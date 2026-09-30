@@ -17,8 +17,8 @@ const developmentPhases = [
     'Architecture + home',
     'The foundation of your creative space.',
     [
-      'Guest-first launch and offline home',
-      'Clean architecture and centralized entitlements',
+      'Account-free launch and offline home',
+      'Clean architecture and local project storage',
       'Responsive dark design and navigation',
     ],
   ),
@@ -45,7 +45,7 @@ const developmentPhases = [
     [
       'Transitions between clips',
       'Basic effects',
-      'Free and Premium effect collections',
+      'All effect collections included',
     ],
   ),
   DevelopmentPhase(5, 'Templates', 'A starting point for every idea.', [
@@ -53,7 +53,7 @@ const developmentPhases = [
     'YouTube thumbnails and product ads',
     'Festival and business posters',
     'Editable text, images, colors and layout',
-    'Limited free library and full Pro library',
+    'Every template available without an account',
   ]),
   DevelopmentPhase(
     6,
@@ -61,7 +61,7 @@ const developmentPhases = [
     'Keep the subject. Change the scene.',
     [
       'On-device, open-source model',
-      'Premium background removal',
+      'Background removal included for everyone',
       'Subject cutout and background replacement',
       'No media uploads or paid AI APIs',
     ],
@@ -72,24 +72,15 @@ const developmentPhases = [
     'Offline media references and thumbnails',
     'Storage and permission error recovery',
   ]),
-  DevelopmentPhase(
-    8,
-    'Premium + mock entitlement',
-    'One place for every Pro benefit.',
-    [
-      '₹39/month and ₹299/year plans',
-      'Signup and verification only at purchase',
-      'Clearly labelled local test entitlement',
-      'Replaceable Google Play Billing gateway',
-      'Higher-quality export, more fonts and stickers',
-      'Future 4K and premium on-device tools',
-      'Optional future Supabase account adapter',
-    ],
-  ),
-  DevelopmentPhase(9, 'Ads architecture', 'Keep free editing accessible.', [
-    'Replaceable ad provider and no-op offline adapter',
-    'No ads for Premium',
-    'Consent, failure handling and editor-safe placements',
+  DevelopmentPhase(8, 'All tools included', 'Create without subscriptions.', [
+    'Every filter, font, sticker and template',
+    'Photo export up to 4096px and video export up to 1080p',
+    'No accounts, email verification or purchases',
+  ]),
+  DevelopmentPhase(9, 'Private workspace', 'Keep editing focused.', [
+    'No advertisements or tracking',
+    'No media uploads',
+    'Offline editing and local export',
   ]),
   DevelopmentPhase(
     10,

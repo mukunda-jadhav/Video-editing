@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../features/photo_editor/presentation/photo_editor_screen.dart';
@@ -143,32 +142,11 @@ class _EditorHostState extends ConsumerState<EditorHost> {
     if (mounted) ref.invalidate(recentProjectsProvider);
   }
 
-  Future<bool> _ensurePro() async {
-    if (ref
-        .read(entitlementRepositoryProvider)
-        .current
-        .isProAt(DateTime.now())) {
-      return true;
-    }
-    await context.push('/upgrade');
-    return mounted &&
-        ref.read(entitlementRepositoryProvider).current.isProAt(DateTime.now());
-  }
-
   Future<List<String>> _pick(FileType type, {bool multiple = false}) =>
       ref.read(mediaImportServiceProvider).pick(_id, type, multiple: multiple);
   Future<String?> _pickImage() async =>
       (await _pick(FileType.image)).firstOrNull;
-  Future<void> _checkTemplateAccess() async {
-    if (_template?.premium == true && !await _ensurePro()) {
-      throw StateError(
-        'This template needs an active Pro entitlement. Your project remains saved.',
-      );
-    }
-  }
-
   Future<String> _exportImage(Uint8List bytes, String name) async {
-    await _checkTemplateAccess();
     final temp = await getTemporaryDirectory();
     final file = File(
       p.join(
@@ -218,11 +196,6 @@ class _EditorHostState extends ConsumerState<EditorHost> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(entitlementProvider);
-    final pro = ref
-        .read(entitlementRepositoryProvider)
-        .current
-        .isProAt(DateTime.now());
     return FutureBuilder<Map<String, dynamic>?>(
       future: _loadFuture,
       builder: (context, snapshot) {
@@ -279,13 +252,13 @@ class _EditorHostState extends ConsumerState<EditorHost> {
           return VideoEditorScreen(
             initialData: snapshot.data,
             onSave: _save,
-            ensurePro: _ensurePro,
-            isPro: pro,
+            thumbnailLoader: (path, seconds) => ref
+                .read(nativeMediaServiceProvider)
+                .getVideoThumbnail(path, timeSeconds: seconds),
             pickVideos: () => _pick(FileType.video, multiple: true),
             pickAudio: () async => (await _pick(FileType.audio)).firstOrNull,
             pickImage: _pickImage,
             publishVideo: (path, name) async {
-              await _checkTemplateAccess();
               return ref
                   .read(nativeMediaServiceProvider)
                   .publish(path, name, video: true);
@@ -295,12 +268,7 @@ class _EditorHostState extends ConsumerState<EditorHost> {
         return PhotoEditorScreen(
           initialData: snapshot.data,
           onSave: _save,
-          ensurePro: _ensurePro,
-          isPro: pro,
           removeBackground: (path) async {
-            if (!await _ensurePro()) {
-              throw StateError('Background removal requires Pro.');
-            }
             return ref.read(nativeMediaServiceProvider).removeBackground(path);
           },
           exportBytes: _exportImage,

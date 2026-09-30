@@ -4,30 +4,27 @@ import 'package:framelab/features/templates/domain/template_catalog.dart';
 import 'package:framelab/features/video_editor/domain/video_document.dart';
 
 void main() {
-  test(
-    'catalog covers requested formats with free and Pro starting points',
-    () {
-      expect(templateCatalog.map((template) => template.category).toSet(), {
-        'Instagram posts',
-        'Stories',
-        'Reels',
-        'YouTube thumbnails',
-        'Product ads',
-        'Festival posters',
-        'Business posters',
-      });
-      expect(templateCatalog.any((template) => !template.premium), isTrue);
-      expect(templateCatalog.any((template) => template.premium), isTrue);
-      expect(
-        templateCatalog.any((template) => template.video && !template.premium),
-        isTrue,
-      );
-      expect(
-        templateCatalog.map((template) => template.id).toSet().length,
-        templateCatalog.length,
-      );
-    },
-  );
+  test('catalog covers every requested format without an access tier', () {
+    expect(templateCatalog.map((template) => template.category).toSet(), {
+      'Instagram posts',
+      'Stories',
+      'Reels',
+      'YouTube thumbnails',
+      'Product ads',
+      'Festival posters',
+      'Business posters',
+    });
+    expect(templateCatalog.length, 14);
+    expect(templateCatalog.any((template) => template.video), isTrue);
+    expect(templateCatalog.map((template) => template.headlineFont).toSet(), {
+      'StudioSans',
+      'StudioDisplay',
+    });
+    expect(
+      templateCatalog.map((template) => template.id).toSet().length,
+      templateCatalog.length,
+    );
+  });
 
   for (final template in templateCatalog) {
     test('${template.id} creates an editable, roundtrippable recipe', () {
@@ -42,7 +39,6 @@ void main() {
           document.texts.first.text,
           template.headline.replaceAll('\n', ' '),
         );
-        expect(document.usesProTools, template.premium);
         expect(
           VideoDocument.fromJson(document.toJson()).toJson(),
           document.toJson(),

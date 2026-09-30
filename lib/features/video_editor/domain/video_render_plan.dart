@@ -54,7 +54,19 @@ class VideoRenderPlan {
           clip.cropX > 1 ||
           !clip.cropY.isFinite ||
           clip.cropY < 0 ||
-          clip.cropY > 1) {
+          clip.cropY > 1 ||
+          !clip.brightness.isFinite ||
+          clip.brightness < -.5 ||
+          clip.brightness > .5 ||
+          !clip.contrast.isFinite ||
+          clip.contrast < 0 ||
+          clip.contrast > 2 ||
+          !clip.saturation.isFinite ||
+          clip.saturation < 0 ||
+          clip.saturation > 2 ||
+          !clip.exposure.isFinite ||
+          clip.exposure < -2 ||
+          clip.exposure > 2) {
         throw ArgumentError('The timeline contains an invalid clip.');
       }
     }
@@ -117,6 +129,22 @@ class VideoRenderPlan {
       'hue=s=0.78,colorchannelmixer=rr=1.02:gb=0.04:bb=1.08,vignette=PI/5',
   };
 
+  static String adjustmentFor(VideoClip clip) {
+    if (clip.brightness == 0 &&
+        clip.contrast == 1 &&
+        clip.saturation == 1 &&
+        clip.exposure == 0) {
+      return 'null';
+    }
+    final exposure = math.pow(2, clip.exposure).toDouble();
+    final gain = number(clip.contrast * exposure);
+    final offset = number(
+      128 * (1 - clip.contrast) * exposure + clip.brightness * 255,
+    );
+    final lut = 'clip(val*$gain+$offset\\,0\\,255)';
+    return 'hue=s=${number(clip.saturation)},lutrgb=r=$lut:g=$lut:b=$lut';
+  }
+
   static String tempo(double speed) {
     if (speed < .5) {
       return 'atempo=0.5,atempo=${number(speed * 2)}';
@@ -142,7 +170,7 @@ class VideoRenderPlan {
         'fade=t=in:st=0:d=${number(math.min(.4, clip.duration / 3))},fade=t=out:st=${number(math.max(0, clip.duration - .4))}:d=${number(math.min(.4, clip.duration / 3))}',
     };
     final graph =
-        '[0:v:0]setpts=(PTS-STARTPTS)/${number(clip.speed)},$crop,scale=$width:$height:flags=lanczos,setsar=1,fps=30,settb=AVTB,${filterFor(clip.filter)},$effects,format=yuv420p[v];'
+        '[0:v:0]setpts=(PTS-STARTPTS)/${number(clip.speed)},$crop,scale=$width:$height:flags=lanczos,setsar=1,fps=30,settb=AVTB,${filterFor(clip.filter)},${adjustmentFor(clip)},$effects,format=yuv420p[v];'
         '${clip.hasAudio ? '[0:a:0]asetpts=PTS-STARTPTS,${tempo(clip.speed)},volume=${number(clip.volume)},aresample=48000,aformat=channel_layouts=stereo,apad' : 'anullsrc=r=48000:cl=stereo'},atrim=duration=$duration,asetpts=PTS-STARTPTS[a]';
     return [
       ...common,

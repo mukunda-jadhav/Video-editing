@@ -1,13 +1,13 @@
-# FrameLab v1.0.0-test
+# FrameLab 1.1.0-test — free tools and live editing
 
-First public test prerelease of the offline Flutter Android photo/video/template studio. Free editing needs no account; media processing, projects, fonts and the background-removal model stay on the device.
+This update addresses slow brightness/size adjustments. Photo edits repaint cached image textures, and video adjustments/canvas/layers update the original native video without encoding a preview after each change. Timeline scrubbing seeks the source player directly.
 
-Includes crop/adjustments/filters/text/stickers/background replacement and HD photo export; video trim/split/merge/crop/speed/audio/music/text/overlays/filters/effects/transitions and 720p/1080p export; 14 editable templates; local save/recovery; on-device U²-Net-P background removal; centralized mock Pro and ads architecture.
+All editing features are now free. Purchase, email verification, mock Pro, entitlements and advertising subsystems are removed. All 14 templates, five fonts, background removal, filters/effects/transitions, 4096px photo export and 720p/1080p video export remain available offline.
 
-Download app-arm64-v8a-release.apk for most phones, app-armeabi-v7a-release.apk for 32-bit ARM phones, or app-x86_64-release.apk for the emulator. Android API 24+ is required. SHA256SUMS.txt contains download digests.
+The dark home screen prioritizes New project and recent projects. The video editor keeps a preview, timeline and labelled bottom tools. Exact complex transitions/effects and mixed music use explicit composition preview; export always renders the complete recipe. Initial media decoding, segmentation and export still require processing time.
 
-These APKs enable mock Pro (₹39/month and ₹299/year shown for testing) and use an Android debug test signing key. No charges are made; email verification is simulated locally. Real Google Play Billing/email verification/live ads are not configured. 4K video and additional Premium on-device tools remain future capabilities.
+Choose app-arm64-v8a-release.apk for most phones, app-armeabi-v7a-release.apk for 32-bit phones, or app-x86_64-release.apk for the emulator. Android API24+ is required. SHA256SUMS.txt records asset digests. Version code3 and the unchanged test signing key allow an update of the earlier installation. Local projects survive a normal app update; uninstalling removes them.
 
-Validation: 167 unit/widget tests and 4 Android integration checks passed on an API 37/16 KB emulator. APK signatures and ZIP/64-bit ELF alignment passed; the x86_64 main release launched offline. Native editing tests used debug builds. Physical-device performance, media quality, accessibility and release-mode editing qualification remain open.
+This remains a test prerelease with development signing. Physical-device frame-rate, media-quality and store-release qualification remain open. Source, license notices and detailed checks are in the repository.
 
-Bundled model/fonts/native runtimes are open-source; licenses/provenance and source links are in docs/DEPENDENCIES.md, assets/licenses, assets/fonts, android/app/src/main/assets/models and the app's offline license screen. See README and docs/MASTER_CHECKLIST.md for setup and remaining public-store release work.
+Validation: 137 unit/widget tests, five distinct Android checks, clean analysis, APK signature/ZIP/64-bit ELF16KB inspection and offline x86_64 release launch passed. Live gesture tests retained the native texture/player through eight frames and started zero video encoders.

@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 1 delivery report
 
 > Historical report for the foundation delivered on 28 September 2026. Its preview-only behavior and validation results describe that earlier build. Phases 2–10 now supply the editor engines and integrations; use [MASTER_CHECKLIST.md](MASTER_CHECKLIST.md), [TESTING.md](TESTING.md) and [COMPLETE_SOURCE.md](COMPLETE_SOURCE.md) for the current app.

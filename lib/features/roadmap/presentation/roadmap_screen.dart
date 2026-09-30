@@ -16,7 +16,7 @@ class RoadmapScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Photo, video, templates and local projects are available. Store setup and broader Android device testing remain before public release.',
+          'Photo, video, templates and local projects are available without accounts or subscriptions. Android device testing continues.',
         ),
         const SizedBox(height: 24),
         for (final phase in developmentPhases)

@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 8 — Premium and local mock entitlement
 
 Status: **Local test checkout, persistence, expiry, restore/reset and feature gates implemented. Real billing/email are intentionally unconfigured.**

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
-
 import '../../../core/theme/app_theme.dart';
+import '../../../features/projects/domain/project_repository.dart';
 import 'widgets/template_art.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -14,15 +14,12 @@ class HomeScreen extends ConsumerWidget {
     required this.onCreateVideo,
     required this.onViewProjects,
     required this.onViewTemplates,
-    required this.onViewPremium,
     required this.onViewSettings,
   });
-
   final VoidCallback onCreatePhoto;
   final VoidCallback onCreateVideo;
   final VoidCallback onViewProjects;
   final VoidCallback onViewTemplates;
-  final VoidCallback onViewPremium;
   final VoidCallback onViewSettings;
 
   @override
@@ -34,73 +31,172 @@ class HomeScreen extends ConsumerWidget {
         key: const PageStorageKey('home-scroll'),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1048),
+            constraints: const BoxConstraints(maxWidth: 880),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _BrandHeader(onViewPremium: onViewPremium),
-                  const SizedBox(height: 28),
-                  const _CreativeHero(),
-                  const SizedBox(height: 28),
-                  _CreateActions(
-                    onPhoto: onCreatePhoto,
-                    onVideo: onCreateVideo,
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.movie_edit,
+                        size: 28,
+                        color: AppColors.accent,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'FrameLab',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Settings',
+                        onPressed: onViewSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 30),
-                  _SectionHeading(
-                    title: 'Find your starting point',
-                    action: 'Explore',
-                    onTap: onViewTemplates,
+                  const SizedBox(height: 22),
+                  _NewProject(onTap: onCreateVideo),
+                  const SizedBox(height: 18),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final large =
+                          MediaQuery.textScalerOf(context).scale(14) > 22;
+                      final actions = [
+                        _QuickAction(
+                          icon: Icons.add_photo_alternate_outlined,
+                          title: 'New photo',
+                          onTap: onCreatePhoto,
+                        ),
+                        _QuickAction(
+                          icon: Icons.video_library_outlined,
+                          title: 'New video',
+                          onTap: onCreateVideo,
+                        ),
+                        _QuickAction(
+                          icon: Icons.dashboard_customize_outlined,
+                          title: 'Templates',
+                          onTap: onViewTemplates,
+                        ),
+                      ];
+                      if (large || constraints.maxWidth < 280) {
+                        return Column(
+                          children: [
+                            for (final action in actions)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: action,
+                              ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          for (var i = 0; i < actions.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 10),
+                            Expanded(child: actions[i]),
+                          ],
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Editable templates · Made to become yours',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  _TemplateStrip(onViewTemplates: onViewTemplates),
                   const SizedBox(height: 28),
-                  _SectionHeading(
+                  _Heading(
                     title: 'Your projects',
                     action: 'View all',
                     onTap: onViewProjects,
                   ),
                   const SizedBox(height: 12),
                   if (projects.isEmpty)
-                    _ProjectsEmptyState(onCreatePhoto: onCreatePhoto)
-                  else ...[
-                    for (final project in projects.take(3))
-                      Card(
-                        child: ListTile(
-                          leading: project.thumbnailPath == null
-                              ? const Icon(Icons.layers_outlined)
-                              : ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    File(project.thumbnailPath!),
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 128,
-                                    errorBuilder: (_, _, _) =>
-                                        const Icon(Icons.layers_outlined),
-                                  ),
-                                ),
-                          title: Text(
-                            project.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 30,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          const Icon(
+                            Icons.video_collection_outlined,
+                            color: AppColors.muted,
+                            size: 32,
                           ),
-                          subtitle: Text(project.kind.name),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: () => context.push('/edit/${project.id}'),
-                        ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Your next edit starts here',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Create a project. Pick your clips. Make it yours.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )
+                  else ...[
+                    for (final project in projects.take(5))
+                      _ProjectRow(
+                        project: project,
+                        onTap: () => context.push('/edit/${project.id}'),
                       ),
                   ],
-                  const SizedBox(height: 20),
-                  _BuildNote(onViewSettings: onViewSettings),
+                  const SizedBox(height: 26),
+                  _Heading(
+                    title: 'Start with a template',
+                    action: 'Explore',
+                    onTap: onViewTemplates,
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final item in const [
+                          ('Social post', TemplateArtStyle.studio),
+                          ('Story', TemplateArtStyle.weekend),
+                          ('Thumbnail', TemplateArtStyle.product),
+                        ]) ...[
+                          _TemplatePreview(
+                            title: item.$1,
+                            style: item.$2,
+                            onTap: onViewTemplates,
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.offline_bolt_outlined,
+                        size: 16,
+                        color: AppColors.muted,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'All tools free. Your media stays on your device.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -111,502 +207,234 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _BrandHeader extends StatelessWidget {
-  const _BrandHeader({required this.onViewPremium});
-  final VoidCallback onViewPremium;
-
+class _NewProject extends StatelessWidget {
+  const _NewProject({required this.onTap});
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 20,
-        runSpacing: 12,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ExcludeSemantics(
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Icon(
-                    Icons.crop_free_rounded,
-                    color: AppColors.onPrimary,
-                    size: 26,
-                  ),
-                ),
+  Widget build(BuildContext context) => Material(
+    color: AppColors.accent,
+    borderRadius: BorderRadius.circular(18),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.onAccent.withValues(alpha: .09),
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  'FrameLab',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(letterSpacing: -.8),
-                ),
+              child: const Icon(
+                Icons.add_rounded,
+                size: 34,
+                color: AppColors.onAccent,
               ),
-            ],
-          ),
-          OutlinedButton.icon(
-            onPressed: onViewPremium,
-            icon: const Icon(Icons.auto_awesome_outlined, size: 17),
-            label: const Text('PRO'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.accent,
-              backgroundColor: AppColors.accent.withValues(alpha: .06),
-              side: BorderSide(color: AppColors.accent.withValues(alpha: .3)),
-              minimumSize: const Size(88, 48),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-          ),
-        ],
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'New project',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(color: AppColors.onAccent),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Turn your clips into a story',
+                    style: TextStyle(color: AppColors.onAccent),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_rounded, color: AppColors.onAccent),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _CreativeHero extends StatelessWidget {
-  const _CreativeHero();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > 700;
-        final content = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 7,
-              runSpacing: 4,
-              children: [
-                ExcludeSemantics(
-                  child: Icon(
-                    Icons.offline_bolt_outlined,
-                    color: AppColors.accent,
-                    size: 16,
-                  ),
-                ),
-                Text(
-                  'ON YOUR DEVICE. IN YOUR FLOW.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.2,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 15),
-            Text(
-              'A little idea.',
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            Text(
-              'A great creation.',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineLarge?.copyWith(color: AppColors.primary),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Make something that feels like you.\nYour creative space. No account needed.',
-            ),
-          ],
-        );
-        if (!wide) return content;
-        return Row(
-          children: [
-            Expanded(flex: 3, child: content),
-            const SizedBox(width: 32),
-            Flexible(
-              flex: 2,
-              child: ExcludeSemantics(
-                child: Transform.rotate(
-                  angle: -.065,
-                  child: AspectRatio(
-                    aspectRatio: 1.4,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: const TemplateArt(style: TemplateArtStyle.studio),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _CreateActions extends StatelessWidget {
-  const _CreateActions({required this.onPhoto, required this.onVideo});
-  final VoidCallback onPhoto;
-  final VoidCallback onVideo;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stacked =
-            constraints.maxWidth < 312 ||
-            MediaQuery.textScalerOf(context).scale(16) > 21.6;
-        final photo = _CreateCard(
-          title: 'New photo',
-          subtitle: 'From everyday to eye-catching',
-          icon: Icons.add_photo_alternate_outlined,
-          color: AppColors.primary,
-          onTap: onPhoto,
-        );
-        final video = _CreateCard(
-          title: 'New video',
-          subtitle: 'Little moments. Big stories.',
-          icon: Icons.video_library_outlined,
-          color: AppColors.accent,
-          onTap: onVideo,
-        );
-        if (stacked) {
-          return Column(children: [photo, const SizedBox(height: 12), video]);
-        }
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: photo),
-              const SizedBox(width: 12),
-              Expanded(child: video),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CreateCard extends StatelessWidget {
-  const _CreateCard({
-    required this.title,
-    required this.subtitle,
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({
     required this.icon,
-    required this.color,
+    required this.title,
     required this.onTap,
   });
-  final String title;
-  final String subtitle;
   final IconData icon;
-  final Color color;
+  final String title;
   final VoidCallback onTap;
-
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      child: Material(
-        color: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppColors.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: .13),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(icon, color: color, size: 23),
-                    ),
-                    const Spacer(),
-                    const Icon(
-                      Icons.north_east_rounded,
-                      size: 19,
-                      color: AppColors.muted,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 17),
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 5),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
+  Widget build(BuildContext context) => Material(
+    color: AppColors.surface,
+    borderRadius: BorderRadius.circular(14),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        child: Column(
+          children: [
+            Icon(icon, size: 26, color: AppColors.text),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({
+class _Heading extends StatelessWidget {
+  const _Heading({
     required this.title,
     required this.action,
     required this.onTap,
   });
-  final String title;
-  final String action;
+  final String title, action;
   final VoidCallback onTap;
-
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final large = MediaQuery.textScalerOf(context).scale(16) > 21.6;
-        final heading = Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium,
-        );
-        final button = TextButton(onPressed: onTap, child: Text(action));
-        if (large || constraints.maxWidth < 312) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [heading, button],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: heading),
-            const SizedBox(width: 8),
-            button,
-          ],
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      ),
+      const SizedBox(width: 8),
+      TextButton(onPressed: onTap, child: Text(action)),
+    ],
+  );
 }
 
-class _TemplateStrip extends StatelessWidget {
-  const _TemplateStrip({required this.onViewTemplates});
-  final VoidCallback onViewTemplates;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // A horizontal, intrinsically sized row accommodates large text without
-        // squeezing labels or imposing a fragile fixed list height.
-        final tileWidth = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 28) / 3
-            : 164.0;
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _TemplateTile(
-                  width: tileWidth,
-                  title: 'Make it yours',
-                  category: 'Instagram post',
-                  style: TemplateArtStyle.studio,
-                  onTap: onViewTemplates,
-                ),
-                const SizedBox(width: 14),
-                _TemplateTile(
-                  width: tileWidth,
-                  title: 'Weekend journal',
-                  category: 'Story & reel',
-                  style: TemplateArtStyle.weekend,
-                  onTap: onViewTemplates,
-                ),
-                const SizedBox(width: 14),
-                _TemplateTile(
-                  width: tileWidth,
-                  title: 'Daily essentials',
-                  category: 'Product ad',
-                  style: TemplateArtStyle.product,
-                  onTap: onViewTemplates,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _TemplateTile extends StatelessWidget {
-  const _TemplateTile({
-    required this.width,
-    required this.title,
-    required this.category,
-    required this.style,
-    required this.onTap,
-  });
-  final double width;
-  final String title;
-  final String category;
-  final TemplateArtStyle style;
+class _ProjectRow extends StatelessWidget {
+  const _ProjectRow({required this.project, required this.onTap});
+  final ProjectSummary project;
   final VoidCallback onTap;
-
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Semantics(
-        button: true,
-        label:
-            '$title template preview, $category. Tap to browse and edit templates.',
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
-        excludeSemantics: true,
-        child: Material(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AspectRatio(aspectRatio: 1, child: TemplateArt(style: style)),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.labelLarge,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 70,
+                  height: 60,
+                  child: project.thumbnailPath == null
+                      ? ColoredBox(
+                          color: AppColors.surfaceRaised,
+                          child: Icon(
+                            project.kind == ProjectKind.video
+                                ? Icons.movie_outlined
+                                : Icons.photo_outlined,
+                            color: AppColors.muted,
+                          ),
+                        )
+                      : Image.file(
+                          File(project.thumbnailPath!),
+                          fit: BoxFit.cover,
+                          cacheWidth: 160,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: AppColors.surfaceRaised,
+                            child: Icon(
+                              Icons.image_outlined,
+                              color: AppColors.muted,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          category,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              Positioned.fill(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(onTap: onTap),
                 ),
               ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      project.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${project.kind.name} · Saved locally',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _ProjectsEmptyState extends StatelessWidget {
-  const _ProjectsEmptyState({required this.onCreatePhoto});
-  final VoidCallback onCreatePhoto;
-
+class _TemplatePreview extends StatelessWidget {
+  const _TemplatePreview({
+    required this.title,
+    required this.style,
+    required this.onTap,
+  });
+  final String title;
+  final TemplateArtStyle style;
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const Icon(Icons.layers_outlined, color: AppColors.muted, size: 30),
-          const SizedBox(height: 12),
-          Text(
-            'Every great edit starts somewhere.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Your creations are saved here automatically. Start with a photo, video or template.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-          TextButton.icon(
-            onPressed: onCreatePhoto,
-            icon: const Icon(Icons.add_rounded, size: 20),
-            label: const Text('Start your first creation'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BuildNote extends StatelessWidget {
-  const _BuildNote({required this.onViewSettings});
-  final VoidCallback onViewSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onViewSettings,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-            child: Row(
-              children: [
-                const ExcludeSemantics(
-                  child: Icon(
-                    Icons.construction_outlined,
-                    color: AppColors.muted,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Your studio. Your files.',
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Offline editing · Settings and privacy',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const ExcludeSemantics(
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ],
+  Widget build(BuildContext context) => SizedBox(
+    width: 156,
+    child: Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 108,
+              child: ExcludeSemantics(child: TemplateArt(style: style)),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

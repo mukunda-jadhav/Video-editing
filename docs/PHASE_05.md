@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 5 — Templates
 
 Status: **Fourteen template recipes and editing routes implemented; template browsing and the Everyday studio editing route passed on Android. Every design still needs device visual/export review.**

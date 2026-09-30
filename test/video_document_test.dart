@@ -125,35 +125,6 @@ void main() {
     );
   });
 
-  test('premium recipe detection includes fonts effects and transitions', () {
-    final initial = VideoDocument(clips: [clip('a')]);
-    expect(initial.usesProTools, false);
-    expect(
-      initial
-          .copyWith(clips: [clip('a').copyWith(effect: VideoEffect.soft)])
-          .usesProTools,
-      true,
-    );
-    expect(
-      initial
-          .copyWith(
-            clips: [clip('a').copyWith(transition: VideoTransition.slide)],
-          )
-          .usesProTools,
-      true,
-    );
-    expect(
-      initial
-          .copyWith(
-            texts: const [
-              VideoText(id: 't', text: 'Title', font: 'StudioScript'),
-            ],
-          )
-          .usesProTools,
-      true,
-    );
-  });
-
   test('document cannot mutate its recipe collections from outside', () {
     final source = [clip('a')];
     final document = VideoDocument(clips: source);

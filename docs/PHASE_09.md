@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 9 — Ads architecture
 
 Status: **No-op offline gateway, consent/policy and Pro suppression implemented. No real ads or ad requests are configured.**

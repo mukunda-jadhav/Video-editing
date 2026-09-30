@@ -1,3 +1,18 @@
+# FrameLab 1.1 verification
+
+- Static analysis: no issues. Full unit/widget suite: **137 passed**.
+- Android live-edit regression: **2 passed** on API 37 / 16KB emulator. Eight photo and video gesture frames reuse their native source texture/player; ratio changes update on the next frame; video scrubbing performs zero encode jobs.
+- Native thumbnail: bounded JPEG decoded successfully and repeated timestamp uses the cached path.
+- Three release APKs built with default free configuration, version 1.1.0/code 3; signature, ZIP and 64-bit ELF 16KB checks passed.
+- Native Android media suite: **3 passed**, including live-adjustment export. x86_64 main release cold launch: **2547ms**, offline home reviewed in [screenshot](screenshots/v11-release-home.png).
+- Current native export/UI verification and public release evidence: [REALTIME_UPDATE.md](REALTIME_UPDATE.md) and [PUBLISHING.md](PUBLISHING.md).
+
+Run `flutter analyze`, `flutter test`, then Android `integration_test/realtime_editor_test.dart`, `integration_test/media_suite_test.dart` and `integration_test/ui_smoke_test.dart`. Build the ordinary app with `flutter build apk --release --split-per-abi` after integration checks so platform tooling is regenerated. No mock purchase define is used.
+
+The following record is historical1.0 evidence; its paid-access/ads descriptions and APK links describe that earlier release.1.1 supersedes that behavior. Physical-phone/frame-rate/media-quality and native release-mode editing acceptance remain open.
+
+---
+
 # Validation and repeatable tests
 
 This is the current-source validation record, updated 30 September 2026. Historical Phase 1 results in `PHASE_01.md` and `ANDROID_SMOKE_RESULTS.json` belong to the earlier foundation APK and do not validate today's editing engines.

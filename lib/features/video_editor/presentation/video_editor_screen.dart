@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -10,21 +11,22 @@ import '../data/ffmpeg_video_renderer.dart';
 import '../domain/video_document.dart';
 import '../domain/video_history.dart';
 import '../domain/video_renderer.dart';
+import '../domain/video_realtime_preview.dart';
 
-/// The editor knows recipes and rendering. Storage, picking, entitlements and
+/// The editor knows recipes and rendering. Storage, picking and
 /// publishing are injected by the application composition root.
 class VideoEditorScreen extends StatefulWidget {
   const VideoEditorScreen({
     super.key,
     this.initialData,
     required this.onSave,
-    required this.ensurePro,
-    required this.isPro,
     required this.pickVideos,
     required this.pickAudio,
     required this.pickImage,
     required this.publishVideo,
     this.renderer,
+    this.playerFactory,
+    this.thumbnailLoader,
   });
   final Map<String, dynamic>? initialData;
   final Future<void> Function(
@@ -33,14 +35,17 @@ class VideoEditorScreen extends StatefulWidget {
     String? thumbnailPath,
   )
   onSave;
-  final Future<bool> Function() ensurePro;
-  final bool isPro;
   final Future<List<String>> Function() pickVideos;
   final Future<String?> Function() pickAudio;
   final Future<String?> Function() pickImage;
   final Future<String> Function(String renderedPath, String fileName)
   publishVideo;
   final VideoRenderer? renderer;
+
+  /// Injectable playback boundary for tests; production opens the source file.
+  final VideoPlayerController Function(String path)? playerFactory;
+  final Future<String?> Function(String path, double timeSeconds)?
+  thumbnailLoader;
 
   @override
   State<VideoEditorScreen> createState() => _VideoEditorScreenState();
@@ -55,14 +60,30 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   String? _previewPath;
   String? _error;
   String _tool = 'Trim';
-  String _stage = 'Preparing preview';
+  String _stage = 'Preparing export';
   int _selected = 0;
   int _revision = 0;
   int _previewRevision = -1;
   int _savedRevision = 0;
   double _progress = 0;
   double _splitFraction = .5;
-  bool _premium = false;
+  bool _loadingSource = false;
+  bool _composedPreview = false;
+  bool _wantsPlayback = false;
+  bool _scrubbing = false;
+  bool _advancing = false;
+  bool _seekBusy = false;
+  int _sourceGeneration = 0;
+  String? _sourcePath;
+  String? _openingPath;
+  Future<void>? _openingSource;
+  double? _pendingSeek;
+  double? _appliedSpeed;
+  double? _appliedVolume;
+  final _position = ValueNotifier<double>(0);
+  Timer? _seekTimer;
+  final _thumbnails = <String, Future<String?>>{};
+  final _thumbnailAnchors = <String, (double, double)>{};
   bool _importing = false;
   bool _rendering = false;
   bool _exporting = false;
@@ -70,7 +91,6 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   bool _saving = false;
   bool _allowExit = false;
   bool _suspended = false;
-  Timer? _previewTimer;
   Timer? _saveTimer;
   Future<void>? _job;
   Future<void>? _saveFuture;
@@ -81,6 +101,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     ('Speed', Icons.speed_rounded),
     ('Audio', Icons.music_note_rounded),
     ('Text', Icons.text_fields_rounded),
+    ('Adjust', Icons.tune_rounded),
     ('Filters', Icons.filter_vintage_outlined),
     ('Effects', Icons.auto_awesome_outlined),
     ('Transition', Icons.compare_arrows_rounded),
@@ -107,7 +128,6 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _renderer = widget.renderer ?? FfmpegVideoRenderer();
-    _premium = widget.isPro;
     try {
       _document = widget.initialData == null
           ? VideoDocument()
@@ -122,19 +142,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   }
 
   @override
-  void didUpdateWidget(covariant VideoEditorScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isPro != widget.isPro) _premium = widget.isPro;
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _suspended = state != AppLifecycleState.resumed;
     if (_suspended) {
+      _wantsPlayback = false;
       unawaited(_player?.pause());
       unawaited(_save());
       if (!_exporting) unawaited(_renderer.cancel());
-    } else if (_previewRevision != _revision) {
+    } else if (!_composedPreview) {
       _schedulePreview();
     }
   }
@@ -142,10 +157,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _previewTimer?.cancel();
+    _seekTimer?.cancel();
     _saveTimer?.cancel();
+    _sourceGeneration++;
     final player = _player;
+    player?.removeListener(_playerChanged);
     _player = null;
+    _position.dispose();
     unawaited(_disposeResources(player));
     super.dispose();
   }
@@ -173,11 +191,15 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     if (!mounted || _exporting) return;
     setState(() {
       if (!render && _previewRevision == _revision) _previewRevision++;
+      if (render) _composedPreview = false;
       _document = document;
       _selected = _selected.clamp(0, math.max(0, document.clips.length - 1));
       _revision++;
       _error = null;
-      if (commit) _history.commit(document);
+      if (commit) {
+        _history.commit(document);
+        _refreshThumbnailAnchors();
+      }
     });
     _saveTimer?.cancel();
     _saveTimer = Timer(
@@ -195,6 +217,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       _player = null;
       _previewPath = null;
     });
+    player?.removeListener(_playerChanged);
+    _sourcePath = null;
+    _sourceGeneration++;
     await player?.dispose();
     if (path != null) await _renderer.release(path);
   }
@@ -205,14 +230,24 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     _change(_document.copyWith(clips: clips), commit: commit);
   }
 
+  void _refreshThumbnailAnchors() {
+    final ids = _document.clips.map((clip) => clip.id).toSet();
+    _thumbnailAnchors.removeWhere((id, _) => !ids.contains(id));
+    for (final clip in _document.clips) {
+      _thumbnailAnchors[clip.id] = (clip.start, clip.end);
+    }
+  }
+
   void _commitGesture() {
     _history.commit(_document);
+    _refreshThumbnailAnchors();
     setState(() {});
   }
 
   void _undo(bool redo) {
     final next = redo ? _history.redo() : _history.undo();
     _change(next, commit: false);
+    _refreshThumbnailAnchors();
   }
 
   Future<void> _save({bool announce = false}) async {
@@ -250,17 +285,245 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     }
   }
 
+  // Recipe changes only update the texture, color matrix and canvas. Encoding
+  // is reserved for explicit composition preview and final export.
   void _schedulePreview() {
-    _previewTimer?.cancel();
     if (_rendering && !_exporting) unawaited(_renderer.cancel());
     if (_document.clips.isEmpty || _suspended || _exporting) return;
-    _previewTimer = Timer(const Duration(milliseconds: 700), () {
-      if (mounted && !_rendering && !_exporting) _job = _renderPreview();
+    unawaited(_syncSource());
+  }
+
+  VideoPlayerController _makePlayer(String path) =>
+      widget.playerFactory?.call(path) ??
+      VideoPlayerController.file(File(path));
+
+  Future<void> _syncSource() async {
+    final clip = _clip;
+    if (clip == null) return;
+    if (_openingPath == clip.path && _openingSource != null) {
+      await _openingSource;
+      if (!mounted) return;
+      final current = _clip;
+      if (current != null &&
+          current.path == clip.path &&
+          _sourcePath == current.path &&
+          !_composedPreview &&
+          !_exporting &&
+          !_suspended &&
+          _player != null &&
+          _player!.value.isInitialized) {
+        _applyPlaybackSettings(_player!, current);
+      }
+      return;
+    }
+    _openingPath = clip.path;
+    final opening = _openSource();
+    _openingSource = opening;
+    try {
+      await opening;
+    } finally {
+      if (identical(opening, _openingSource)) {
+        _openingSource = null;
+        _openingPath = null;
+      }
+    }
+  }
+
+  Future<void> _openSource() async {
+    final clip = _clip;
+    if (clip == null || !mounted || _suspended || _exporting) return;
+    final existing = _player;
+    if (_sourcePath == clip.path &&
+        existing != null &&
+        existing.value.isInitialized) {
+      _applyPlaybackSettings(existing, clip);
+      final seconds = existing.value.position.inMilliseconds / 1000;
+      if (!_seekBusy &&
+          !_scrubbing &&
+          (seconds < clip.start || seconds > clip.end)) {
+        _queueSeek(VideoPreviewPosition.startOf(_document, _selected));
+      }
+      _playerChanged();
+      return;
+    }
+    final generation = ++_sourceGeneration;
+    final next = _makePlayer(clip.path);
+    setState(() => _loadingSource = true);
+    try {
+      await next.initialize();
+      await next.setLooping(false);
+      await next.setPlaybackSpeed(clip.speed);
+      await next.setVolume(clip.volume.clamp(0, 1));
+      await next.seekTo(Duration(milliseconds: (clip.start * 1000).round()));
+      if (!mounted || generation != _sourceGeneration || _exporting) {
+        await next.dispose();
+        return;
+      }
+      final previous = _player;
+      final previousPath = _previewPath;
+      previous?.removeListener(_playerChanged);
+      setState(() {
+        _player = next;
+        _sourcePath = clip.path;
+        _previewPath = null;
+        _composedPreview = false;
+        _appliedSpeed = clip.speed;
+        _appliedVolume = clip.volume.clamp(0, 1);
+        _loadingSource = false;
+      });
+      next.addListener(_playerChanged);
+      _playerChanged();
+      await previous?.dispose();
+      if (previousPath != null) await _renderer.release(previousPath);
+      if (_wantsPlayback && !_scrubbing) await next.play();
+    } catch (error) {
+      await next.dispose();
+      if (mounted && generation == _sourceGeneration) {
+        setState(() {
+          _loadingSource = false;
+          _error =
+              'This clip could not be played. Try another MP4 file. $error';
+        });
+      }
+    }
+  }
+
+  void _applyPlaybackSettings(VideoPlayerController player, VideoClip clip) {
+    if (_appliedSpeed != clip.speed) {
+      _appliedSpeed = clip.speed;
+      unawaited(player.setPlaybackSpeed(clip.speed));
+    }
+    final volume = clip.volume.clamp(0, 1).toDouble();
+    if (_appliedVolume != volume) {
+      _appliedVolume = volume;
+      unawaited(player.setVolume(volume));
+    }
+  }
+
+  void _playerChanged() {
+    final player = _player;
+    if (!mounted ||
+        player == null ||
+        !player.value.isInitialized ||
+        _scrubbing ||
+        _seekBusy) {
+      return;
+    }
+    final seconds = player.value.position.inMilliseconds / 1000;
+    if (_composedPreview) {
+      _position.value = seconds.clamp(0, _document.duration);
+      return;
+    }
+    final clip = _clip;
+    if (clip == null) return;
+    _position.value =
+        (VideoPreviewPosition.startOf(_document, _selected) +
+                (seconds - clip.start).clamp(0, clip.end - clip.start) /
+                    clip.speed)
+            .clamp(0, _document.duration);
+    final playEnd = clip.end - _document.transitionAt(_selected) * clip.speed;
+    if (_wantsPlayback && seconds >= playEnd - .025 && !_advancing) {
+      _advancing = true;
+      unawaited(_advanceClip());
+    }
+  }
+
+  Future<void> _advanceClip() async {
+    try {
+      if (_selected < _document.clips.length - 1) {
+        await _player?.pause();
+        if (!mounted) return;
+        setState(() => _selected++);
+        await _syncSource();
+        final next = _clip;
+        if (next != null && mounted) {
+          await _player?.seekTo(
+            Duration(milliseconds: (next.start * 1000).round()),
+          );
+          if (_wantsPlayback && !_scrubbing) await _player?.play();
+        }
+      } else {
+        _wantsPlayback = false;
+        await _player?.pause();
+      }
+    } finally {
+      _advancing = false;
+    }
+  }
+
+  void _selectClip(int index, {bool transition = false}) {
+    setState(() {
+      _selected = index;
+      _splitFraction = .5;
+      _composedPreview = false;
+      if (transition) _tool = 'Transition';
     });
+    _queueSeek(VideoPreviewPosition.startOf(_document, index));
+  }
+
+  void _queueSeek(double seconds, {bool immediate = false}) {
+    _position.value = seconds.clamp(0, _document.duration);
+    _pendingSeek = _position.value;
+    if (immediate) {
+      _seekTimer?.cancel();
+      unawaited(_flushSeek());
+    } else if (_seekTimer?.isActive != true) {
+      _seekTimer = Timer(
+        const Duration(milliseconds: 40),
+        () => unawaited(_flushSeek()),
+      );
+    }
+  }
+
+  Future<void> _flushSeek() async {
+    if (_seekBusy ||
+        !mounted ||
+        _document.clips.isEmpty ||
+        _exporting ||
+        _rendering) {
+      return;
+    }
+    _seekBusy = true;
+    try {
+      // One native seek in flight; discard intermediate drag events and apply
+      // the latest target. A slider never queues dozens of codec seeks.
+      while (_pendingSeek != null && mounted && !_exporting && !_rendering) {
+        final seconds = _pendingSeek!;
+        _pendingSeek = null;
+        if (_composedPreview) {
+          await _player?.seekTo(
+            Duration(milliseconds: (seconds * 1000).round()),
+          );
+        } else {
+          final target = VideoPreviewPosition.at(_document, seconds);
+          if (_selected != target.index) {
+            setState(() => _selected = target.index);
+          }
+          await _syncSource();
+          if (!mounted || _exporting || _rendering) return;
+          _splitFraction = (target.clipSeconds / _clip!.duration).clamp(
+            .02,
+            .98,
+          );
+          await _player?.seekTo(
+            Duration(milliseconds: (target.sourceSeconds * 1000).round()),
+          );
+        }
+      }
+      if (_wantsPlayback && !_scrubbing) await _player?.play();
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Could not seek this clip. $error');
+    } finally {
+      _seekBusy = false;
+    }
   }
 
   Future<void> _renderPreview() async {
     if (_rendering || _exporting || !mounted || _suspended) return;
+    _sourceGeneration++;
+    _pendingSeek = null;
+    _seekTimer?.cancel();
+    _wantsPlayback = false;
     final revision = _revision;
     final document = _document;
     setState(() {
@@ -279,7 +542,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
         await _renderer.release(result.path);
         return;
       }
-      final nextPlayer = VideoPlayerController.file(File(result.path));
+      final nextPlayer = _makePlayer(result.path);
       try {
         await nextPlayer.initialize();
         await nextPlayer.setLooping(true);
@@ -293,15 +556,21 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
         await _renderer.release(result.path);
         return;
       }
+      _sourceGeneration++;
       final previous = _player;
+      previous?.removeListener(_playerChanged);
       final previousPath = _previewPath;
-      final seek = previous?.value.position ?? Duration.zero;
+      final seek = Duration(milliseconds: (_position.value * 1000).round());
       setState(() {
         _player = nextPlayer;
         _previewPath = result.path;
         _previewRevision = revision;
+        _composedPreview = true;
+        _sourcePath = null;
+        _loadingSource = false;
         _error = null;
       });
+      nextPlayer.addListener(_playerChanged);
       await previous?.dispose();
       if (previousPath != null) await _renderer.release(previousPath);
       await nextPlayer.seekTo(
@@ -311,7 +580,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       // Superseded previews are expected while the user changes a recipe.
     } catch (error) {
       if (mounted && revision == _revision) {
-        setState(() => _error = 'Preview could not be created. $error');
+        setState(
+          () => _error = 'Composition preview could not be created. $error',
+        );
       }
     } finally {
       _rendering = false;
@@ -329,13 +600,6 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
         _stage = stage;
       });
     }
-  }
-
-  Future<bool> _pro() async {
-    if (_premium) return true;
-    final granted = await widget.ensurePro();
-    if (mounted) setState(() => _premium = granted);
-    return granted && mounted;
   }
 
   Future<void> _addClips() async {
@@ -367,9 +631,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       if (!mounted) return;
       if (clips.isNotEmpty) {
         final selected = _document.clips.length;
+        _selected = selected;
         _change(_document.copyWith(clips: [..._document.clips, ...clips]));
         setState(() {
-          _selected = selected;
           _splitFraction = .5;
         });
       }
@@ -447,7 +711,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
               ),
               ListTile(
                 leading: const Icon(Icons.high_quality_outlined),
-                title: const Text('1080p • Pro'),
+                title: const Text('1080p • Full HD'),
                 subtitle: const Text('More detail for your best work'),
                 onTap: () => Navigator.pop(context, 1080),
               ),
@@ -455,7 +719,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                 enabled: false,
                 leading: Icon(Icons.four_k_outlined),
                 title: Text('4K • Coming later'),
-                subtitle: Text('Reserved for a future Pro update'),
+                subtitle: Text('Planned for a future update'),
               ),
             ],
           ),
@@ -463,7 +727,6 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       ),
     );
     if (edge == null || !mounted) return;
-    if ((edge > 720 || _document.usesProTools) && !await _pro()) return;
     if (!mounted) return;
     await _export(edge);
   }
@@ -471,7 +734,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   Future<void> _export(int edge) async {
     if (_exporting) return;
     _exportCancelled = false;
-    _previewTimer?.cancel();
+    _sourceGeneration++;
+    _pendingSeek = null;
+    _wantsPlayback = false;
+    _seekTimer?.cancel();
     setState(() {
       _exporting = true;
       _progress = 0;
@@ -647,19 +913,19 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final compact =
-                        constraints.maxHeight < 620 ||
+                        constraints.maxHeight < 390 ||
                         MediaQuery.textScalerOf(context).scale(14) > 20;
                     final contents = <Widget>[
                       if (compact)
-                        SizedBox(height: 220, child: _preview())
+                        SizedBox(height: 210, child: _preview())
                       else
                         Expanded(child: _preview()),
                       _playback(),
                       _timeline(),
                       SizedBox(
                         height: compact
-                            ? 225
-                            : math.min(250, constraints.maxHeight * .31),
+                            ? 210
+                            : math.min(190, constraints.maxHeight * .28),
                         child: _toolPanel(),
                       ),
                       _toolbar(),
@@ -784,21 +1050,35 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
 
   Widget _preview() {
     final player = _player;
+    final clip = _clip;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (player != null && player.value.isInitialized)
+          if (player != null && player.value.isInitialized && clip != null)
             Center(
               child: AspectRatio(
-                aspectRatio: player.value.aspectRatio,
-                child: VideoPlayer(player),
+                key: const ValueKey('video-preview-canvas'),
+                aspectRatio: _composedPreview
+                    ? player.value.aspectRatio
+                    : _document.aspectRatio,
+                child: _composedPreview
+                    ? VideoPlayer(player)
+                    : RepaintBoundary(child: _liveCanvas(player, clip)),
+              ),
+            )
+          else if (_loadingSource)
+            const Center(
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
           else
@@ -816,7 +1096,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
               bottom: 12,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: .75),
+                  color: Colors.black.withValues(alpha: .8),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Padding(
@@ -827,16 +1107,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                       Text(_stage, style: const TextStyle(fontSize: 12)),
                       const SizedBox(height: 6),
                       LinearProgressIndicator(value: _progress),
+                      TextButton(
+                        onPressed: () => unawaited(_renderer.cancel()),
+                        child: const Text('Cancel preview'),
+                      ),
                     ],
                   ),
                 ),
               ),
-            ),
-          if (!_rendering && _previewRevision != _revision && _error == null)
-            Positioned(
-              left: 12,
-              bottom: 12,
-              child: _badge('Updating preview…'),
             ),
           if (_error != null)
             Center(
@@ -880,13 +1158,142 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
             top: 10,
             left: 10,
             child: _badge(
-              '${_document.canvas.name.toUpperCase()}  •  ${_time(_document.duration)}',
+              _composedPreview ? 'COMPOSITION PREVIEW' : 'LIVE PREVIEW',
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _liveCanvas(
+    VideoPlayerController player,
+    VideoClip clip,
+  ) => LayoutBuilder(
+    builder: (context, constraints) {
+      final frameWidth = constraints.maxWidth;
+      final frameHeight = constraints.maxHeight;
+      final source = player.value.size;
+      final scale =
+          math.max(frameWidth / source.width, frameHeight / source.height) *
+          clip.zoom;
+      final width = source.width * scale;
+      final height = source.height * scale;
+      Widget video = ColorFiltered(
+        key: const ValueKey('video-live-color'),
+        colorFilter: ColorFilter.matrix(VideoPreviewColor.matrix(clip)),
+        child: VideoPlayer(player),
+      );
+      if (clip.effect == VideoEffect.mirror) {
+        video = Transform.flip(flipX: true, child: video);
+      }
+      if (clip.effect == VideoEffect.soft) {
+        video = ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+          child: video,
+        );
+      }
+      final videoTexture = Positioned(
+        key: const ValueKey('video-live-crop'),
+        left: -(width - frameWidth) * clip.cropX,
+        top: -(height - frameHeight) * clip.cropY,
+        width: width,
+        height: height,
+        child: video,
+      );
+      return ClipRect(
+        child: ValueListenableBuilder<double>(
+          valueListenable: _position,
+          child: videoTexture,
+          builder: (context, position, texture) {
+            final local =
+                (position - VideoPreviewPosition.startOf(_document, _selected))
+                    .clamp(0, clip.duration);
+            final fadeTime = math.min(.4, clip.duration / 3);
+            final opacity = clip.effect == VideoEffect.fade
+                ? math
+                      .min(local / fadeTime, (clip.duration - local) / fadeTime)
+                      .clamp(0, 1)
+                      .toDouble()
+                : 1.0;
+            final overlay = _document.overlay;
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Stack(children: [texture!]),
+                  ),
+                ),
+                if (clip.effect == VideoEffect.vignette ||
+                    clip.filter == VideoFilter.cinema)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: .5),
+                            ],
+                            stops: const [.35, 1.0],
+                            radius: .8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (overlay != null &&
+                    position >= overlay.start &&
+                    position <= overlay.end)
+                  Align(
+                    alignment: Alignment(overlay.x * 2 - 1, overlay.y * 2 - 1),
+                    child: Opacity(
+                      opacity: overlay.opacity,
+                      child: SizedBox(
+                        width: frameWidth * overlay.width,
+                        child: Image.file(
+                          File(overlay.path),
+                          gaplessPlayback: true,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
+                    ),
+                  ),
+                for (final text in _document.texts)
+                  if (position >= text.start && position <= text.end)
+                    Align(
+                      alignment: Alignment(text.x * 2 - 1, text.y * 2 - 1),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: text.background
+                              ? Colors.black.withValues(alpha: .55)
+                              : Colors.transparent,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(text.background ? 4 : 0),
+                          child: Text(
+                            text.text,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: text.font,
+                              fontSize: math.max(8, frameHeight * text.size),
+                              color: Color(text.color),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
+            );
+          },
+        ),
+      );
+    },
+  );
 
   Widget _badge(String text) => DecoratedBox(
     decoration: BoxDecoration(
@@ -902,74 +1309,168 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     ),
   );
 
-  Widget _playback() {
-    final player = _player;
-    if (player == null) {
-      return const SizedBox(
-        height: 48,
-        child: Center(
-          child: Text(
-            'Preview includes your edits, music and transitions',
-            style: TextStyle(fontSize: 11),
+  Widget _playback() => ValueListenableBuilder<double>(
+    valueListenable: _position,
+    builder: (context, position, _) {
+      final player = _player;
+      final available = player != null && player.value.isInitialized;
+      return Row(
+        children: [
+          IconButton(
+            tooltip: available && player.value.isPlaying
+                ? 'Pause preview'
+                : 'Play preview',
+            onPressed: !available || _rendering
+                ? null
+                : () async {
+                    _wantsPlayback = !player.value.isPlaying;
+                    if (_wantsPlayback) {
+                      if (position >= _document.duration - .04) {
+                        _queueSeek(0, immediate: true);
+                      } else {
+                        await player.play();
+                      }
+                    } else {
+                      await player.pause();
+                    }
+                    if (mounted) setState(() {});
+                  },
+            icon: Icon(
+              available && player.value.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+            ),
           ),
-        ),
+          SizedBox(
+            width: 52,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _time(position),
+                style: const TextStyle(fontSize: 11, fontFamily: 'StudioMono'),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              key: const ValueKey('video-timeline-scrubber'),
+              value: position.clamp(0, math.max(.01, _document.duration)),
+              max: math.max(.01, _document.duration),
+              onChangeStart: (_) {
+                _scrubbing = true;
+                unawaited(_player?.pause());
+              },
+              onChanged: _rendering ? null : _queueSeek,
+              onChangeEnd: (value) {
+                _scrubbing = false;
+                _queueSeek(value, immediate: true);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _time(_document.duration),
+                style: const TextStyle(fontSize: 11, fontFamily: 'StudioMono'),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: _composedPreview
+                ? 'Back to live editing'
+                : 'Preview composition with music and transitions',
+            onPressed: _rendering || _loadingSource
+                ? null
+                : () {
+                    if (_composedPreview) {
+                      setState(() => _composedPreview = false);
+                      _schedulePreview();
+                    } else {
+                      _job = _renderPreview();
+                    }
+                  },
+            icon: Icon(
+              _composedPreview
+                  ? Icons.edit_rounded
+                  : Icons.movie_filter_outlined,
+              size: 22,
+            ),
+          ),
+        ],
       );
-    }
-    return ValueListenableBuilder<VideoPlayerValue>(
-      valueListenable: player,
-      builder: (context, value, _) {
-        final duration = value.duration.inMilliseconds.toDouble();
-        return SizedBox(
-          height: 48,
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: value.isPlaying ? 'Pause preview' : 'Play preview',
-                onPressed: _rendering
-                    ? null
-                    : () => unawaited(
-                        value.isPlaying ? player.pause() : player.play(),
-                      ),
-                icon: Icon(
-                  value.isPlaying
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                ),
-              ),
-              Text(
-                _time(value.position.inMilliseconds / 1000),
-                style: const TextStyle(fontSize: 11),
-              ),
+    },
+  );
+
+  Future<String?> _thumbnail(VideoClip clip, int sample) {
+    final loader = widget.thumbnailLoader;
+    if (loader == null) return Future.value(null);
+    final anchor = _thumbnailAnchors.putIfAbsent(
+      clip.id,
+      () => (clip.start, clip.end),
+    );
+    final seconds =
+        anchor.$1 + math.max(0, anchor.$2 - anchor.$1 - .04) * sample / 2;
+    final key = '${clip.path}:$seconds';
+    return _thumbnails.putIfAbsent(key, () {
+      if (_thumbnails.length >= 48) _thumbnails.remove(_thumbnails.keys.first);
+      return Future<String?>.sync(
+        () => loader(clip.path, seconds),
+      ).catchError((_) => null);
+    });
+  }
+
+  Widget _filmstrip(VideoClip clip, bool active) => Stack(
+    fit: StackFit.expand,
+    children: [
+      if (widget.thumbnailLoader != null)
+        Row(
+          children: [
+            for (var sample = 0; sample < 3; sample++)
               Expanded(
-                child: Slider(
-                  value: value.position.inMilliseconds.toDouble().clamp(
-                    0,
-                    math.max(1, duration),
-                  ),
-                  max: math.max(1, duration),
-                  onChanged: _rendering
-                      ? null
-                      : (value) => unawaited(
-                          player.seekTo(Duration(milliseconds: value.round())),
+                child: FutureBuilder<String?>(
+                  future: _thumbnail(clip, sample),
+                  builder: (context, snapshot) => snapshot.data == null
+                      ? ColoredBox(
+                          color: AppColors.surfaceRaised,
+                          child: const Center(
+                            child: Icon(
+                              Icons.videocam_outlined,
+                              size: 18,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        )
+                      : Image.file(
+                          File(snapshot.data!),
+                          fit: BoxFit.cover,
+                          cacheWidth: 160,
+                          errorBuilder: (_, _, _) =>
+                              const ColoredBox(color: AppColors.surfaceRaised),
                         ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: 14),
-                child: Text(
-                  _time(duration / 1000),
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ),
+          ],
+        ),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: .25),
+              Colors.black.withValues(alpha: .8),
             ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      ),
+      if (active) ColoredBox(color: AppColors.primary.withValues(alpha: .06)),
+    ],
+  );
 
   Widget _timeline() => Container(
-    height: math.max(97, 55 + MediaQuery.textScalerOf(context).scale(42)),
+    height: math.max(100, 58 + MediaQuery.textScalerOf(context).scale(42)),
     color: AppColors.surface,
     child: Row(
       children: [
@@ -989,22 +1490,19 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                     selected: active,
                     button: true,
                     child: InkWell(
-                      onTap: () => setState(() {
-                        _selected = index;
-                        _splitFraction = .5;
-                      }),
+                      onTap: () => _selectClip(index),
                       borderRadius: BorderRadius.circular(12),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        width: (clip.duration * 6).clamp(100, 190),
+                        width: (clip.duration * 16).clamp(100, 320),
                         margin: const EdgeInsets.symmetric(vertical: 2),
                         padding: const EdgeInsets.all(9),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: active
                                 ? [
-                                    const Color(0xff50406e),
-                                    const Color(0xff302745),
+                                    AppColors.primary.withValues(alpha: .22),
+                                    AppColors.primary.withValues(alpha: .08),
                                   ]
                                 : [AppColors.surfaceRaised, AppColors.surface],
                           ),
@@ -1016,40 +1514,53 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                           ),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Stack(
                           children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.videocam_outlined, size: 14),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                const Spacer(),
-                                if (clip.volume == 0)
-                                  const Icon(
-                                    Icons.volume_off_outlined,
-                                    size: 13,
-                                  ),
-                              ],
-                            ),
-                            Text(
-                              clip.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white,
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: _filmstrip(clip, active),
                               ),
                             ),
-                            Text(
-                              '${clip.duration.toStringAsFixed(1)}s  •  ${clip.speed.toStringAsFixed(2)}×',
-                              style: const TextStyle(fontSize: 10),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.videocam_outlined,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      '${index + 1}',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    const Spacer(),
+                                    if (clip.volume == 0)
+                                      const Icon(
+                                        Icons.volume_off_outlined,
+                                        size: 13,
+                                      ),
+                                  ],
+                                ),
+                                Text(
+                                  clip.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  '${clip.duration.toStringAsFixed(1)}s  •  ${clip.speed.toStringAsFixed(2)}×',
+                                  style: const TextStyle(fontSize: 10),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1060,10 +1571,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                     IconButton(
                       tooltip:
                           'Transition after clip ${index + 1}: ${clip.transition.name}',
-                      onPressed: () => setState(() {
-                        _selected = index;
-                        _tool = 'Transition';
-                      }),
+                      onPressed: () => _selectClip(index, transition: true),
                       icon: Icon(
                         clip.transition == VideoTransition.cut
                             ? Icons.add_rounded
@@ -1106,6 +1614,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       border: Border(top: BorderSide(color: AppColors.border)),
     ),
     child: ListView.separated(
+      key: const ValueKey('video-editor-toolbar'),
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       itemCount: _tools.length,
@@ -1188,6 +1697,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
             'Speed' => _speedTools(clip),
             'Audio' => _audioTools(clip),
             'Text' => _textTools(),
+            'Adjust' => _adjustTools(clip),
             'Filters' => _filterTools(clip),
             'Effects' => _effectTools(clip),
             'Transition' => _transitionTools(clip),
@@ -1228,7 +1738,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       _splitFraction,
       .02,
       .98,
-      (v) => setState(() => _splitFraction = v),
+      (v) {
+        setState(() => _splitFraction = v);
+        _queueSeek(
+          VideoPreviewPosition.startOf(_document, _selected) +
+              clip.duration * v,
+        );
+      },
       commit: false,
     ),
     Wrap(
@@ -1305,8 +1821,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     final clips = [..._document.clips];
     final clip = clips.removeAt(index);
     clips.insert(index + direction, clip);
+    _selected = index + direction;
     _change(_document.copyWith(clips: clips));
-    setState(() => _selected = index + direction);
   }
 
   List<Widget> _canvasTools(VideoClip clip) => [
@@ -1453,10 +1969,48 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
         (v) => _change(_document.copyWith(musicStart: v), commit: false),
       ),
       const Text(
-        'Music loops to fit the sequence. Use audio you have permission to use.',
+        'Music loops in export. Use composition preview to hear the full mix.',
         style: TextStyle(fontSize: 11),
       ),
     ],
+  ];
+
+  List<Widget> _adjustTools(VideoClip clip) => [
+    _slider(
+      'Brightness',
+      clip.brightness,
+      -.5,
+      .5,
+      (v) => _editClip(clip.copyWith(brightness: v), commit: false),
+    ),
+    _slider(
+      'Contrast',
+      clip.contrast,
+      0,
+      2,
+      (v) => _editClip(clip.copyWith(contrast: v), commit: false),
+    ),
+    _slider(
+      'Saturation',
+      clip.saturation,
+      0,
+      2,
+      (v) => _editClip(clip.copyWith(saturation: v), commit: false),
+    ),
+    _slider(
+      'Exposure',
+      clip.exposure,
+      -2,
+      2,
+      (v) => _editClip(clip.copyWith(exposure: v), commit: false),
+    ),
+    TextButton.icon(
+      onPressed: () => _editClip(
+        clip.copyWith(brightness: 0, contrast: 1, saturation: 1, exposure: 0),
+      ),
+      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+      label: const Text('Reset adjustments'),
+    ),
   ];
 
   List<Widget> _filterTools(VideoClip clip) => [
@@ -1468,12 +2022,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       children: VideoFilter.values
           .map(
             (filter) => ChoiceChip(
-              label: Text(
-                '${_label(filter.name)}${filter == VideoFilter.cinema ? ' • Pro' : ''}',
-              ),
+              label: Text(_label(filter.name)),
               selected: clip.filter == filter,
               onSelected: (_) async {
-                if (filter == VideoFilter.cinema && !await _pro()) return;
                 if (mounted) _editClip(_clip!.copyWith(filter: filter));
               },
             ),
@@ -1482,7 +2033,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     ),
     const SizedBox(height: 12),
     const Text(
-      'Preview and export use the same color processing.',
+      'Color changes are live. Use composition preview to check the final look.',
       style: TextStyle(fontSize: 11),
     ),
   ];
@@ -1494,12 +2045,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       children: VideoEffect.values
           .map(
             (effect) => ChoiceChip(
-              label: Text(
-                '${_label(effect.name)}${effect == VideoEffect.soft ? ' • Pro' : ''}',
-              ),
+              label: Text(_label(effect.name)),
               selected: clip.effect == effect,
               onSelected: (_) async {
-                if (effect == VideoEffect.soft && !await _pro()) return;
                 if (mounted) _editClip(_clip!.copyWith(effect: effect));
               },
             ),
@@ -1536,18 +2084,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
             children: VideoTransition.values
                 .map(
                   (transition) => ChoiceChip(
-                    label: Text(
-                      '${_label(transition.name)}${[VideoTransition.slide, VideoTransition.circle].contains(transition) ? ' • Pro' : ''}',
-                    ),
+                    label: Text(_label(transition.name)),
                     selected: clip.transition == transition,
                     onSelected: (_) async {
-                      if ([
-                            VideoTransition.slide,
-                            VideoTransition.circle,
-                          ].contains(transition) &&
-                          !await _pro()) {
-                        return;
-                      }
                       if (mounted) {
                         _editClip(_clip!.copyWith(transition: transition));
                       }
@@ -1625,7 +2164,6 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
             existing ??
             VideoText(id: _id(), text: 'Your story', end: _document.duration),
         duration: _document.duration,
-        ensurePro: _pro,
         colors: _colors,
       ),
     );
@@ -1805,12 +2343,10 @@ class _TextEditor extends StatefulWidget {
   const _TextEditor({
     required this.text,
     required this.duration,
-    required this.ensurePro,
     required this.colors,
   });
   final VideoText text;
   final double duration;
-  final Future<bool> Function() ensurePro;
   final List<int> colors;
   @override
   State<_TextEditor> createState() => _TextEditorState();
@@ -1918,16 +2454,11 @@ class _TextEditorState extends State<_TextEditor> {
                             .map(
                               (font) => ChoiceChip(
                                 label: Text(
-                                  '${font.replaceFirst('Studio', '')}${font == 'StudioScript' || font == 'StudioDisplay' ? ' • Pro' : ''}',
+                                  font.replaceFirst('Studio', ''),
                                   style: TextStyle(fontFamily: font),
                                 ),
                                 selected: _font == font,
                                 onSelected: (_) async {
-                                  if ((font == 'StudioScript' ||
-                                          font == 'StudioDisplay') &&
-                                      !await widget.ensurePro()) {
-                                    return;
-                                  }
                                   if (mounted) setState(() => _font = font);
                                 },
                               ),

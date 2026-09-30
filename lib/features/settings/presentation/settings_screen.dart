@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
 import '../../../core/widgets/page_content.dart';
-import '../../ads/presentation/ads_widgets.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -15,7 +14,7 @@ class SettingsScreen extends ConsumerWidget {
         const InfoPanel(
           title: 'Your media stays with you',
           body:
-              'Photos, videos, edit recipes and background removal stay on this device. FrameLab does not upload your media. No account is needed for free editing.',
+              'Photos, videos, edit recipes and background removal stay on this device. FrameLab does not upload your media. All tools are available without an account.',
           icon: Icons.lock_outline_rounded,
         ),
         const SizedBox(height: 16),
@@ -26,14 +25,6 @@ class SettingsScreen extends ConsumerWidget {
           icon: Icons.folder_outlined,
         ),
         const SizedBox(height: 16),
-        const AdsPreferencesSection(),
-        const SizedBox(height: 16),
-        ListTile(
-          leading: const Icon(Icons.auto_awesome_outlined),
-          title: const Text('Premium and local test purchases'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/upgrade'),
-        ),
         ListTile(
           leading: const Icon(Icons.description_outlined),
           title: const Text('Open-source licenses'),
@@ -96,7 +87,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
         const Text(
-          'Export quality: Free photos up to 1920px; Pro up to 4096px. Video: 720p Free, 1080p Pro. 4K video and additional premium on-device tools are future capabilities. Codec support depends on the device.',
+          'Export quality: Photos up to 4096px; video in 720p or 1080p. All fonts, filters, templates and background removal are included. 4K video is not available yet. Codec support depends on the device.',
         ),
       ],
     ),

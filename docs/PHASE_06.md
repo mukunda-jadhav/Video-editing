@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 6 — On-device background remover
 
 Status: **Bundled U²-Net-P inference, transparent output and PNG publication passed on the Android emulator; real-photo mask quality and physical-device performance remain open.**

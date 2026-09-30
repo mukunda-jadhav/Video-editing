@@ -36,6 +36,10 @@ class VideoClip {
     this.cropX = .5,
     this.cropY = .5,
     this.zoom = 1,
+    this.brightness = 0,
+    this.contrast = 1,
+    this.saturation = 1,
+    this.exposure = 0,
   });
 
   final String id;
@@ -57,6 +61,10 @@ class VideoClip {
   final double cropX;
   final double cropY;
   final double zoom;
+  final double brightness;
+  final double contrast;
+  final double saturation;
+  final double exposure;
 
   double get duration => (end - start) / speed;
   String get name => path.replaceAll('\\', '/').split('/').last;
@@ -74,6 +82,10 @@ class VideoClip {
     double? cropX,
     double? cropY,
     double? zoom,
+    double? brightness,
+    double? contrast,
+    double? saturation,
+    double? exposure,
   }) => VideoClip(
     id: id ?? this.id,
     path: path,
@@ -92,6 +104,10 @@ class VideoClip {
     cropX: cropX ?? this.cropX,
     cropY: cropY ?? this.cropY,
     zoom: zoom ?? this.zoom,
+    brightness: brightness ?? this.brightness,
+    contrast: contrast ?? this.contrast,
+    saturation: saturation ?? this.saturation,
+    exposure: exposure ?? this.exposure,
   );
 
   Map<String, dynamic> toJson() => {
@@ -112,6 +128,10 @@ class VideoClip {
     'cropX': cropX,
     'cropY': cropY,
     'zoom': zoom,
+    'brightness': brightness,
+    'contrast': contrast,
+    'saturation': saturation,
+    'exposure': exposure,
   };
 
   factory VideoClip.fromJson(Map<String, dynamic> json) {
@@ -139,6 +159,10 @@ class VideoClip {
       cropX: _number(json['cropX'], .5, 0, 1),
       cropY: _number(json['cropY'], .5, 0, 1),
       zoom: _number(json['zoom'], 1, 1, 3),
+      brightness: _number(json['brightness'], 0, -.5, .5),
+      contrast: _number(json['contrast'], 1, 0, 2),
+      saturation: _number(json['saturation'], 1, 0, 2),
+      exposure: _number(json['exposure'], 0, -2, 2),
     );
   }
 }
@@ -293,16 +317,6 @@ class VideoDocument {
     VideoCanvas.square => 1,
     VideoCanvas.social => 4 / 5,
   };
-
-  bool get usesProTools =>
-      clips.any(
-        (c) =>
-            c.filter == VideoFilter.cinema ||
-            c.effect == VideoEffect.soft ||
-            c.transition == VideoTransition.slide ||
-            c.transition == VideoTransition.circle,
-      ) ||
-      texts.any((t) => t.font == 'StudioScript' || t.font == 'StudioDisplay');
 
   VideoDocument copyWith({
     String? title,

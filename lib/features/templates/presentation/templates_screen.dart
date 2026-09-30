@@ -1,33 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../app/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../domain/template_catalog.dart';
 
-class TemplatesScreen extends ConsumerStatefulWidget {
+class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
   @override
-  ConsumerState<TemplatesScreen> createState() => _TemplatesScreenState();
+  State<TemplatesScreen> createState() => _TemplatesScreenState();
 }
 
-class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
+class _TemplatesScreenState extends State<TemplatesScreen> {
   String _category = 'All';
   Future<void> _open(StudioTemplate template) async {
-    if (template.premium &&
-        !ref
-            .read(entitlementRepositoryProvider)
-            .current
-            .isProAt(DateTime.now())) {
-      await context.push('/upgrade');
-      if (!mounted ||
-          !ref
-              .read(entitlementRepositoryProvider)
-              .current
-              .isProAt(DateTime.now())) {
-        return;
-      }
-    }
     if (mounted) {
       await context.push(
         '${template.video ? '/video' : '/photo'}?template=${template.id}',
@@ -91,7 +75,7 @@ class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
                       return Semantics(
                         button: true,
                         label:
-                            '${template.title}, ${template.category}, ${template.premium ? 'Pro' : 'Free'} template',
+                            '${template.title}, ${template.category}, editable template',
                         child: Card(
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
@@ -118,11 +102,9 @@ class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '${template.video ? 'Video · ' : ''}${template.premium ? 'PRO' : 'FREE'}',
+                                        template.video ? 'VIDEO' : 'DESIGN',
                                         style: TextStyle(
-                                          color: template.premium
-                                              ? AppColors.accent
-                                              : AppColors.primary,
+                                          color: AppColors.primary,
                                           fontSize: 12,
                                         ),
                                       ),

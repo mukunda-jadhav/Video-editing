@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 2 — Photo editor
 
 Status: **Implemented; the template editor route/canvas was exercised and visually reviewed on the emulator. Real-photo picker/export coverage remains in the physical-device matrix.**

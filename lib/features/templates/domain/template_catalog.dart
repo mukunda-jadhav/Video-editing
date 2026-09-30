@@ -12,12 +12,13 @@ class StudioTemplate {
     required this.accent,
     required this.headline,
     required this.subtitle,
-    this.premium = false,
+    this.headlineFont = 'StudioSans',
     this.video = false,
   });
   final String id, title, category, headline, subtitle;
   final int width, height, background, ink, accent;
-  final bool premium, video;
+  final bool video;
+  final String headlineFont;
 
   Map<String, dynamic> get photoRecipe => {
     'version': 1,
@@ -68,7 +69,7 @@ class StudioTemplate {
         'text': headline,
         'color': ink,
         'fontSize': width > height ? 0.10 : 0.13,
-        'fontFamily': premium ? 'StudioDisplay' : 'StudioSans',
+        'fontFamily': headlineFont,
         'bold': true,
       },
       {
@@ -104,7 +105,7 @@ class StudioTemplate {
           'y': .25,
           'size': .095,
           'color': ink,
-          'font': premium ? 'StudioDisplay' : 'StudioSans',
+          'font': headlineFont,
           'background': true,
           'start': 0,
           'end': 86400,
@@ -199,7 +200,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xff9aad72,
     headline: 'LESS,\nBUT\nBETTER.',
     subtitle: 'YOUR BRAND  /  Discover the collection',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'business-open',
@@ -212,7 +213,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffb4a0ff,
     headline: 'YOUR\nNEXT\nCHAPTER.',
     subtitle: 'Grand opening  •  Your business name',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'food-post',
@@ -225,7 +226,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffed937d,
     headline: 'made\nwith\nlove.',
     subtitle: 'FRESH DAILY  /  Your menu here',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'sale-story',
@@ -238,7 +239,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffd4ef89,
     headline: 'THE\nGOOD\nEDIT.',
     subtitle: 'New arrivals. Handpicked for you.',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'reel-launch',
@@ -251,7 +252,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffb4a0ff,
     headline: 'MEET\nWHAT’S\nNEXT.',
     subtitle: 'Your launch. Your moment.',
-    premium: true,
+    headlineFont: 'StudioDisplay',
     video: true,
   ),
   StudioTemplate(
@@ -265,7 +266,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xff9bbe62,
     headline: 'YOU CAN\nMAKE THIS.',
     subtitle: 'THE BEGINNER’S GUIDE',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'festival-colors',
@@ -278,7 +279,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffe99cac,
     headline: 'MORE\nCOLOR.\nMORE JOY.',
     subtitle: 'Wishing you a beautiful celebration.',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'business-workshop',
@@ -291,7 +292,7 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffb4a0ff,
     headline: 'LET’S\nBUILD\nTOGETHER.',
     subtitle: 'WORKSHOP  /  Date • Time • Location',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
   StudioTemplate(
     id: 'product-drop',
@@ -304,6 +305,6 @@ const templateCatalog = <StudioTemplate>[
     accent: 0xffce9b9d,
     headline: 'HELLO,\nNEW\nFAVORITE.',
     subtitle: 'THE LATEST DROP  /  Your store here',
-    premium: true,
+    headlineFont: 'StudioDisplay',
   ),
 ];

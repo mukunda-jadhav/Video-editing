@@ -16,6 +16,29 @@ class NativeMediaService {
     return result;
   }
 
+  /// A small, rotation-correct frame cached privately on Android. Extraction
+  /// stays on the native worker; failures can leave a filmstrip placeholder.
+  Future<String> getVideoThumbnail(
+    String path, {
+    double timeSeconds = 0,
+  }) async {
+    if (!timeSeconds.isFinite || timeSeconds < 0) {
+      throw ArgumentError.value(
+        timeSeconds,
+        'timeSeconds',
+        'Use a non-negative finite time.',
+      );
+    }
+    final result = await channel.invokeMethod<String>('getVideoThumbnail', {
+      'path': path,
+      'timeSeconds': timeSeconds,
+    });
+    if (result == null || result.isEmpty) {
+      throw StateError('This clip has no decodable preview frame.');
+    }
+    return result;
+  }
+
   Future<String> publish(
     String path,
     String name, {

@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 10 — Production optimization
 
 Status: **Resource controls and reproducible checks implemented; physical-device performance/release qualification is not complete.**

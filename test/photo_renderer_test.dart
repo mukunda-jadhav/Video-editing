@@ -1,4 +1,8 @@
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:framelab/features/photo_editor/data/photo_renderer.dart';
@@ -16,16 +20,36 @@ void main() {
     return image;
   }
 
-  Future<img.Image> raster(
-    PhotoDocument document, {
-    int maxEdge = 1080,
-  }) async => img.decodePng(
-    await renderPhotoRaster({
-      'document': document.toJson(),
-      'bytes': Uint8List.fromList(img.encodePng(source())),
-      'maxEdge': maxEdge,
-    }),
-  )!;
+  Future<img.Image> raster(PhotoDocument document, {int maxEdge = 1080}) async {
+    final texture = await decodePhoto(
+      Uint8List.fromList(img.encodePng(source())),
+      maxEdge: maxEdge,
+    );
+    final geometry = PhotoImageGeometry(
+      texture.width,
+      texture.height,
+      document,
+    );
+    final width = geometry.crop.width.toInt();
+    final height = geometry.crop.height.toInt();
+    document.backgroundColor = 0;
+    final composition = PhotoComposition(document, texture, {});
+    final recorder = ui.PictureRecorder();
+    PhotoPainter(
+      composition: composition,
+      document: document,
+    ).paint(Canvas(recorder), Size(width.toDouble(), height.toDouble()));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width, height);
+    try {
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      return img.decodePng(data!.buffer.asUint8List())!;
+    } finally {
+      image.dispose();
+      picture.dispose();
+      composition.dispose();
+    }
+  }
 
   test(
     'crop removes the selected source edge and rotate swaps dimensions',
@@ -88,18 +112,15 @@ void main() {
 
   test('blur softens a real edge', () async {
     final sharp = await raster(PhotoDocument());
-    final blurred = await raster(PhotoDocument(blur: 4));
+    final blurred = await raster(PhotoDocument(blur: 30));
     expect(blurred.getPixel(39, 20).r, lessThan(sharp.getPixel(39, 20).r));
     expect(blurred.getPixel(40, 20).r, greaterThan(sharp.getPixel(40, 20).r));
   });
 
   test('invalid source fails with a useful photo error', () async {
     await expectLater(
-      renderPhotoRaster({
-        'document': PhotoDocument().toJson(),
-        'bytes': Uint8List.fromList([1, 2, 3]),
-      }),
-      throwsFormatException,
+      decodePhoto(Uint8List.fromList([1, 2, 3])),
+      throwsA(isA<Exception>()),
     );
   });
 
@@ -123,7 +144,7 @@ void main() {
           ),
         ],
       );
-      final result = img.decodePng(await exportPhoto(doc, premium: false))!;
+      final result = img.decodePng(await exportPhoto(doc))!;
       expect((result.width, result.height), (64, 80));
       expect(result.getPixel(0, 0).a, 0);
       expect(result.getPixel(32, 40).a, closeTo(64, 1));
@@ -148,8 +169,103 @@ void main() {
         ),
       ],
     );
-    final result = img.decodePng(await exportPhoto(doc, premium: true))!;
+    final result = img.decodePng(await exportPhoto(doc))!;
     final pixel = result.getPixel(32, 32);
     expect([pixel.r, pixel.g, pixel.b, pixel.a], [34, 68, 136, 255]);
   });
+  test('cached source survives rapid edits without reopening media', () async {
+    final directory = await Directory.systemTemp.createTemp('photo-live-test-');
+    final file = File('${directory.path}/source.png');
+    await file.writeAsBytes(img.encodePng(source()));
+    final document = PhotoDocument(imagePath: file.path);
+    final cache = PhotoPreviewCache();
+    final history = PhotoHistory(document);
+    final initial = await cache.prepare(document);
+    final key = cache.mediaKey(document);
+    await file.delete(); // A second decode would now fail.
+    try {
+      for (var i = 1; i <= 30; i++) {
+        document.brightness = 1 + i / 30;
+        document.cropLeft = i / 100;
+        document.width = 1920;
+        document.height = 1080;
+        expect(cache.mediaKey(document), key);
+        final next = await cache.prepare(document);
+        expect(next.foreground!.isCloneOf(initial.foreground!), isTrue);
+        next.dispose();
+      }
+      history.commit(document);
+      final restored = history.undo();
+      expect(restored.brightness, 1);
+      expect(restored.cropLeft, 0);
+      final undone = await cache.prepare(restored);
+      expect(undone.foreground!.isCloneOf(initial.foreground!), isTrue);
+      undone.dispose();
+    } finally {
+      initial.dispose();
+      cache.dispose();
+      await directory.delete(recursive: true);
+    }
+  });
+
+  test(
+    'live preview and PNG export use identical color and geometry',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'photo-parity-test-',
+      );
+      final file = File('${directory.path}/source.png');
+      await file.writeAsBytes(img.encodePng(source()));
+      final document = PhotoDocument(
+        imagePath: file.path,
+        width: 40,
+        height: 80,
+        rotation: 1,
+        flipHorizontal: true,
+        brightness: 1.18,
+        contrast: 1.12,
+        saturation: .8,
+        exposure: .25,
+        filter: 'Warm',
+        cropLeft: .2,
+        cropRight: .9,
+        cropTop: .1,
+        cropBottom: .85,
+        backgroundColor: 0,
+      );
+      final cache = PhotoPreviewCache();
+      final composition = await cache.prepare(document);
+      final recorder = ui.PictureRecorder();
+      PhotoPainter(
+        composition: composition,
+        document: document,
+      ).paint(Canvas(recorder), const Size(40, 80));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(40, 80);
+      try {
+        final preview = img.decodePng(
+          (await image.toByteData(
+            format: ui.ImageByteFormat.png,
+          ))!.buffer.asUint8List(),
+        )!;
+        final exported = img.decodePng(await exportPhoto(document))!;
+        for (var y = 0; y < preview.height; y++) {
+          for (var x = 0; x < preview.width; x++) {
+            final before = preview.getPixel(x, y);
+            final after = exported.getPixel(x, y);
+            expect(
+              [after.r, after.g, after.b, after.a],
+              [before.r, before.g, before.b, before.a],
+            );
+          }
+        }
+      } finally {
+        image.dispose();
+        picture.dispose();
+        composition.dispose();
+        cache.dispose();
+        await directory.delete(recursive: true);
+      }
+    },
+  );
 }

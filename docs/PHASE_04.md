@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 4 — Transitions and effects
 
 Status: **Implemented through the shared FFmpeg recipe/preview/export path and exercised in the Android media suite; real-media boundary quality still needs physical-device validation.**

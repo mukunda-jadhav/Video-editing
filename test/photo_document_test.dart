@@ -108,10 +108,10 @@ void main() {
 
   test('export limits preserve aspect ratio without upscaling', () {
     final doc = PhotoDocument(width: 4000, height: 3000);
-    expect(doc.exportSize(premium: false), (1920, 1440));
-    expect(doc.exportSize(premium: true), (4000, 3000));
+    expect(doc.exportSize(), (4000, 3000));
+    expect(doc.exportSize(), (4000, 3000));
     final small = PhotoDocument(width: 320, height: 200);
-    expect(small.exportSize(premium: true), (320, 200));
+    expect(small.exportSize(), (320, 200));
   });
 
   test('undo is independent from mutations and editing discards redo', () {
@@ -145,21 +145,20 @@ void main() {
   });
 
   test(
-    'saved premium content is identified for an export entitlement recheck',
+    'saved filters fonts and stickers remain editable without access flags',
     () {
-      final document = PhotoDocument();
-      expect(document.usesPremiumAssets, isFalse);
-      document.filter = 'Vivid';
-      expect(document.usesPremiumAssets, isTrue);
-      document.filter = 'Original';
-      document.layers.add(
-        PhotoLayer(id: 'text', kind: 'text', fontFamily: 'StudioScript'),
+      final document = PhotoDocument(
+        filter: 'Vivid',
+        layers: [
+          PhotoLayer(id: 'text', kind: 'text', fontFamily: 'StudioScript'),
+          PhotoLayer(id: 'sticker', kind: 'heart'),
+        ],
       );
-      expect(document.usesPremiumAssets, isTrue);
-      document.layers.single.fontFamily = 'StudioSans';
-      expect(document.usesPremiumAssets, isFalse);
-      document.layers.add(PhotoLayer(id: 'sticker', kind: 'heart'));
-      expect(document.usesPremiumAssets, isTrue);
+      final restored = PhotoDocument.fromJson(document.toJson());
+      expect(restored.filter, 'Vivid');
+      expect(restored.layers.first.fontFamily, 'StudioScript');
+      expect(restored.layers.last.kind, 'heart');
+      expect(restored.toJson().keys, isNot(contains('premium')));
     },
   );
 }

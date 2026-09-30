@@ -163,6 +163,10 @@ void main() {
             cropX: .4,
             cropY: .6,
             zoom: 1.1,
+            brightness: i == 0 ? .1 : 0,
+            contrast: i == 1 ? .85 : 1,
+            saturation: i == 2 ? .8 : 1,
+            exposure: i == 3 ? .25 : 0,
           ),
         );
         final document = VideoDocument(

@@ -11,7 +11,6 @@ void main() {
   Widget editor({
     PhotoDocument? document,
     Future<void> Function(Map<String, dynamic>, String, String?)? save,
-    Future<bool> Function()? ensurePro,
     double textScale = 1,
   }) => MaterialApp(
     theme: AppTheme.dark,
@@ -24,8 +23,6 @@ void main() {
     home: PhotoEditorScreen(
       initialData: document?.toJson(),
       onSave: save ?? (_, title, thumbnail) async {},
-      ensurePro: ensurePro ?? () async => false,
-      isPro: false,
       removeBackground: (path) async => path,
       exportBytes: (Uint8List bytes, String name) async => name,
       pickImage: () async => null,
@@ -56,16 +53,11 @@ void main() {
     'a template automatically saves and basic edits stay account-free',
     (tester) async {
       final saves = <Map<String, dynamic>>[];
-      var requestedPro = 0;
       await tester.pumpWidget(
         editor(
           document: PhotoDocument(title: 'Template'),
           save: (data, title, thumbnail) async {
             saves.add(data);
-          },
-          ensurePro: () async {
-            requestedPro++;
-            return false;
           },
         ),
       );
@@ -79,59 +71,119 @@ void main() {
       expect(saves.length, 2);
       expect(saves.last['rotation'], 1);
       expect(saves.last['flipHorizontal'], isTrue);
-      expect(requestedPro, 0);
       await tester.pumpWidget(const SizedBox());
     },
   );
 
-  testWidgets('saved premium filter rechecks access even for standard export', (
-    tester,
-  ) async {
-    var checks = 0;
-    await tester.pumpWidget(
-      editor(
-        document: PhotoDocument(filter: 'Vivid'),
-        ensurePro: () async {
-          checks++;
-          return false;
-        },
-      ),
-    );
-    await tester.pump(const Duration(seconds: 1));
-    await tester.tap(find.text('Export PNG'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Standard · free'));
-    await tester.pumpAndSettle();
-    expect(checks, 1);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('premium filter calls gate and denial leaves recipe unchanged', (
+  testWidgets('all filters and high-resolution export are freely available', (
     tester,
   ) async {
     final saves = <Map<String, dynamic>>[];
-    var requestedPro = 0;
     await tester.pumpWidget(
       editor(
-        document: PhotoDocument(),
-        save: (data, title, thumbnail) async {
-          saves.add(data);
-        },
-        ensurePro: () async {
-          requestedPro++;
-          return false;
-        },
+        document: PhotoDocument(width: 64, height: 64),
+        save: (data, title, thumbnail) async => saves.add(data),
       ),
     );
     await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('Filters'));
     await tester.pump();
-    await tester.tap(find.text('Fade · Pro'));
+    await tester.tap(find.text('Fade'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(saves.last['filter'], 'Fade');
+    expect(find.textContaining('Pro'), findsNothing);
+    await tester.tap(find.text('Export PNG'));
+    await tester.pumpAndSettle();
+    expect(find.text('High resolution PNG'), findsOneWidget);
+    expect(find.textContaining('Pro'), findsNothing);
+    Navigator.of(tester.element(find.text('High resolution PNG'))).pop();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'brightness drag repaints each frame and commits once on release',
+    (tester) async {
+      final saves = <Map<String, dynamic>>[];
+      await tester.pumpWidget(
+        editor(
+          document: PhotoDocument(),
+          save: (data, title, thumbnail) async => saves.add(data),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      PhotoPainter painter() =>
+          (tester
+                  .widget<CustomPaint>(
+                    find.byKey(const ValueKey('photo-live-preview')),
+                  )
+                  .painter!
+              as PhotoPainter);
+      final composition = painter().composition;
+      for (final value in [1.15, 1.4, 1.75]) {
+        tester
+            .widget<Slider>(
+              find.byKey(const ValueKey('photo-slider-Brightness')),
+            )
+            .onChanged!(value);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(painter().document.brightness, value);
+        expect(painter().composition, same(composition));
+        expect(
+          photoColorMatrix(painter().document).first,
+          closeTo(value, .0001),
+        );
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(saves.length, 1, reason: 'A drag must not persist every frame.');
+      }
+      tester
+          .widget<Slider>(find.byKey(const ValueKey('photo-slider-Brightness')))
+          .onChangeEnd!(1.75);
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.length, 2);
+      expect(saves.last['brightness'], 1.75);
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(painter().document.brightness, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('crop and layout resize react on the next frame', (tester) async {
+    await tester.pumpWidget(editor(document: PhotoDocument()));
+    await tester.pump(const Duration(seconds: 1));
+    PhotoPainter painter() =>
+        (tester
+                .widget<CustomPaint>(
+                  find.byKey(const ValueKey('photo-live-preview')),
+                )
+                .painter!
+            as PhotoPainter);
+    await tester.tap(find.text('Crop'));
     await tester.pump();
-    expect(requestedPro, 1);
-    expect(saves.single['filter'], 'Original');
-    await tester.pumpWidget(const SizedBox());
+    tester
+        .widget<Slider>(find.byKey(const ValueKey('photo-slider-Left')))
+        .onChanged!(.3);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(painter().document.cropLeft, .3);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    tester
+        .widget<Slider>(find.byKey(const ValueKey('photo-slider-Left')))
+        .onChangeEnd!(.3);
+    await tester.ensureVisible(find.text('Layout'));
+    await tester.tap(find.text('Layout'));
+    await tester.pump();
+    await tester.tap(find.text('Story / Reel'));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(painter().document.width, 1080);
+    expect(painter().document.height, 1920);
+    final canvasSize = tester.getSize(
+      find.byKey(const ValueKey('photo-live-preview')),
+    );
+    expect(canvasSize.aspectRatio, closeTo(9 / 16, .0001));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('canvas selection supports keyboard movement and undo', (

@@ -1,3 +1,5 @@
+> Historical phase record. [Version1.1](REALTIME_UPDATE.md) replaces subscription/ads code with free access and replaces slow per-edit preview processing.
+
 # Phase 3 — Video editor
 
 Status: **Implemented and exercised in the three-test Android media suite; the physical-device playback/export matrix remains open.**

@@ -1,8 +1,8 @@
 [
   {
     "apk": "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk",
-    "bytes": 88135415,
-    "sha256": "7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c",
+    "bytes": 86402517,
+    "sha256": "af2980f41b317ad13ae02e0cec2221c58bff49ea669f73b7e2ec0533f56aac52",
     "elf_alignment_passed": true,
     "native_libraries": [
       {
@@ -54,12 +54,6 @@
         "passes": true
       },
       {
-        "path": "lib/arm64-v8a/libdatastore_shared_counter.so",
-        "minimum_load_alignment": 16384,
-        "requires_16kb": true,
-        "passes": true
-      },
-      {
         "path": "lib/arm64-v8a/libffmpegkit.so",
         "minimum_load_alignment": 16384,
         "requires_16kb": true,
@@ -102,30 +96,13 @@
         "passes": true
       }
     ],
-    "zip_alignment_passed": true,
     "signature_verified": true,
-    "signer_details": [
-      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
-      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
-    ],
-    "package_details": [
-      "package: name='com.framelab.framelab' versionCode='2002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
-      "sdkVersion:'24'",
-      "targetSdkVersion:'36'",
-      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
-      "uses-permission: name='android.permission.WAKE_LOCK'",
-      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
-      "uses-permission: name='android.permission.INTERNET'",
-      "application-label:'FrameLab'",
-      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "native-code: 'arm64-v8a'"
-    ]
+    "zip_alignment_verified": true
   },
   {
     "apk": "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk",
-    "bytes": 99415833,
-    "sha256": "b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df",
+    "bytes": 97420789,
+    "sha256": "6d6ca5836172bfadd311e3f83233bf43b071d4b42448b7d337ae27bfbbb33aa5",
     "elf_alignment_passed": true,
     "native_libraries": [
       {
@@ -207,12 +184,6 @@
         "passes": true
       },
       {
-        "path": "lib/armeabi-v7a/libdatastore_shared_counter.so",
-        "minimum_load_alignment": 16384,
-        "requires_16kb": false,
-        "passes": true
-      },
-      {
         "path": "lib/armeabi-v7a/libffmpegkit.so",
         "minimum_load_alignment": 4096,
         "requires_16kb": false,
@@ -273,30 +244,13 @@
         "passes": true
       }
     ],
-    "zip_alignment_passed": true,
     "signature_verified": true,
-    "signer_details": [
-      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
-      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
-    ],
-    "package_details": [
-      "package: name='com.framelab.framelab' versionCode='1002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
-      "sdkVersion:'24'",
-      "targetSdkVersion:'36'",
-      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
-      "uses-permission: name='android.permission.WAKE_LOCK'",
-      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
-      "uses-permission: name='android.permission.INTERNET'",
-      "application-label:'FrameLab'",
-      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "native-code: 'armeabi-v7a'"
-    ]
+    "zip_alignment_verified": true
   },
   {
     "apk": "build/app/outputs/flutter-apk/app-x86_64-release.apk",
-    "bytes": 98702859,
-    "sha256": "2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c",
+    "bytes": 96904428,
+    "sha256": "f188702adad15bfc66464cff7473d8160746ffaac11a2b949fe894f722744783",
     "elf_alignment_passed": true,
     "native_libraries": [
       {
@@ -348,12 +302,6 @@
         "passes": true
       },
       {
-        "path": "lib/x86_64/libdatastore_shared_counter.so",
-        "minimum_load_alignment": 16384,
-        "requires_16kb": true,
-        "passes": true
-      },
-      {
         "path": "lib/x86_64/libffmpegkit.so",
         "minimum_load_alignment": 16384,
         "requires_16kb": true,
@@ -396,24 +344,7 @@
         "passes": true
       }
     ],
-    "zip_alignment_passed": true,
     "signature_verified": true,
-    "signer_details": [
-      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
-      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
-    ],
-    "package_details": [
-      "package: name='com.framelab.framelab' versionCode='4002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
-      "sdkVersion:'24'",
-      "targetSdkVersion:'36'",
-      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
-      "uses-permission: name='android.permission.WAKE_LOCK'",
-      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
-      "uses-permission: name='android.permission.INTERNET'",
-      "application-label:'FrameLab'",
-      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
-      "native-code: 'x86_64'"
-    ]
+    "zip_alignment_verified": true
   }
 ]

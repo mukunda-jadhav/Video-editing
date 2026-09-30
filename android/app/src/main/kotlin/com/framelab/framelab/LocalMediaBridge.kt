@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.media.ExifInterface
 import android.media.MediaScannerConnection
+import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Debug
 import android.os.Environment
@@ -23,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -52,7 +54,7 @@ class LocalMediaBridge(private val activity: Activity) {
                 "modelBundled" to true, "inferenceRuntime" to "ONNX Runtime 1.30.0"))
             return
         }
-        if (method != "publish" && method != "removeBackground") { result.notImplemented(); return }
+        if (method != "publish" && method != "removeBackground" && method != "getVideoThumbnail") { result.notImplemented(); return }
         if (closed) { result.error("CLOSED", "The media service is closed.", null); return }
         if (method == "removeBackground" && !segmenting.compareAndSet(false, true)) {
             result.error("BUSY", "Background removal is already running.", null); return
@@ -62,8 +64,11 @@ class LocalMediaBridge(private val activity: Activity) {
             try {
                 val path = args["path"] as? String ?: error("No media path supplied.")
                 val file = privateFile(path)
-                val output = if (method == "publish") publish(file, args["name"] as? String ?: "FrameLab.png", args["video"] == true)
-                             else removeBackground(file)
+                val output = when (method) {
+                    "publish" -> publish(file, args["name"] as? String ?: "FrameLab.png", args["video"] == true)
+                    "getVideoThumbnail" -> videoThumbnail(file, (args["timeSeconds"] as? Number)?.toDouble() ?: 0.0)
+                    else -> removeBackground(file)
+                }
                 activity.runOnUiThread { result.success(output) }
             } catch (error: OutOfMemoryError) {
                 activity.runOnUiThread { result.error("MEMORY", "This image exceeds available memory. Try a smaller image.", null) }
@@ -81,6 +86,72 @@ class LocalMediaBridge(private val activity: Activity) {
         val data = File(activity.applicationInfo.dataDir).canonicalPath + File.separator
         require(file.path.startsWith(data) && file.isFile) { "Media must be an imported local file." }
         return file
+    }
+
+    /** Android applies video rotation metadata before returning these frames.
+     * Scaled retrieval avoids full-resolution bitmap allocation on API 27+.
+     * Older devices serialize one bounded full-frame fallback at a time. */
+    private fun videoThumbnail(source: File, seconds: Double): String {
+        require(seconds.isFinite() && seconds >= 0.0) { "Choose a valid thumbnail time." }
+        val roundedMs = ((seconds.coerceAtMost(43200.0) * 5).toLong() * 200)
+        val signature = "${source.path}:${source.length()}:${source.lastModified()}:$roundedMs:v1"
+        val digest = MessageDigest.getInstance("SHA-256").digest(signature.toByteArray(Charsets.UTF_8))
+        val key = digest.joinToString("") { "%02x".format(it.toInt() and 255) }
+        val folder = File(activity.cacheDir, "video_thumbnails")
+        require(folder.exists() || folder.mkdirs()) { "Thumbnail cache could not be created." }
+        val destination = File(folder, "$key.jpg")
+        if (destination.isFile && destination.length() > 0) {
+            destination.setLastModified(System.currentTimeMillis())
+            return destination.path
+        }
+        val retriever = MediaMetadataRetriever()
+        var frame: Bitmap? = null
+        var scaled: Bitmap? = null
+        val temporary = File(folder, "$key.tmp")
+        try {
+            retriever.setDataSource(source.path)
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            require(width > 0 && height > 0 && width <= 16384 && height <= 16384) { "This clip has no supported video track." }
+            if (Build.VERSION.SDK_INT < 27) {
+                require(width.toLong() * height <= 12000000L) { "Preview thumbnails for this large clip require Android 8.1 or newer." }
+            }
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val timeMs = if (durationMs > 0) roundedMs.coerceAtMost(max(0L, durationMs - 1)) else roundedMs
+            val ratio = min(1.0, 160.0 / max(width, height))
+            frame = if (Build.VERSION.SDK_INT >= 27) {
+                retriever.getScaledFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    max(1, (width * ratio).toInt()), max(1, (height * ratio).toInt()))
+            } else {
+                retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            }
+            val decoded = frame ?: error("This clip has no decodable preview frame.")
+            val outputRatio = min(1.0, 160.0 / max(decoded.width, decoded.height))
+            scaled = if (outputRatio < 1.0) Bitmap.createScaledBitmap(decoded,
+                max(1, (decoded.width * outputRatio).toInt()), max(1, (decoded.height * outputRatio).toInt()), true) else decoded
+            val thumbnail = scaled ?: error("Thumbnail scaling failed.")
+            temporary.outputStream().use { require(thumbnail.compress(Bitmap.CompressFormat.JPEG, 82, it)) { "Thumbnail encoding failed." } }
+            require(temporary.renameTo(destination)) { "Thumbnail cache write failed." }
+            trimThumbnails(folder, destination)
+            return destination.path
+        } finally {
+            if (scaled !== frame) scaled?.recycle()
+            frame?.recycle()
+            try { retriever.release() } catch (_: Exception) { }
+            temporary.delete()
+        }
+    }
+
+    private fun trimThumbnails(folder: File, newest: File) {
+        val files = folder.listFiles { file -> file.extension == "jpg" }?.sortedBy { it.lastModified() } ?: return
+        var count = files.size
+        var bytes = files.sumOf { it.length() }
+        for (file in files) {
+            if (count <= 256 && bytes <= 24L * 1024 * 1024) break
+            if (file == newest) continue
+            val length = file.length()
+            if (file.delete()) { count--; bytes -= length }
+        }
     }
 
     private fun publish(source: File, suppliedName: String, video: Boolean): String {
