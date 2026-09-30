@@ -1,0 +1,40 @@
+[
+  {
+    "file": "assets\\fonts\\StudioSans.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+    "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+    "license": "SIL Open Font License 1.1"
+  },
+  {
+    "file": "assets\\fonts\\StudioSerif.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/Lora%5Bwght%5D.ttf",
+    "sha256": "822a6621ccbe8d97d20ac88c1c41f5615c9c2c202eaa75f272cd452aac6475a7",
+    "license": "SIL Open Font License 1.1"
+  },
+  {
+    "file": "assets\\fonts\\StudioMono.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/robotomono/RobotoMono%5Bwght%5D.ttf",
+    "sha256": "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b",
+    "license": "SIL Open Font License 1.1"
+  },
+  {
+    "file": "assets\\fonts\\StudioScript.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf",
+    "sha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988",
+    "license": "SIL Open Font License 1.1"
+  },
+  {
+    "file": "assets\\fonts\\StudioDisplay.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf",
+    "sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+    "license": "SIL Open Font License 1.1"
+  },
+  {
+    "file": "android\\app\\src\\main\\assets\\models\\u2netp.onnx",
+    "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+    "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+    "md5": "8e83ca70e441ab06c318d82300c84806",
+    "upstream": "https://github.com/xuebinqin/U-2-Net",
+    "license": "Apache-2.0 upstream model repository; ONNX conversion distributed by rembg"
+  }
+]

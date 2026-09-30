@@ -1,0 +1,22 @@
+* text=auto
+*.dart text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.xml text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.bat text eol=crlf
+android/gradlew text eol=lf
+*.jar binary
+*.onnx binary
+*.ttf binary
+*.png binary
+*.apk binary
+
+# Preserve upstream license text and its verbatim source snapshot.
+assets/fonts/*-OFL.txt whitespace=-blank-at-eol
+docs/COMPLETE_SOURCE.md whitespace=-blank-at-eol

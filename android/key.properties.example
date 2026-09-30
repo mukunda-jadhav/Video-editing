@@ -1,0 +1,6 @@
+# Copy to android/key.properties only when configuring your own release key.
+# key.properties and keystore files are ignored by version control.
+storeFile=C:/secure/framelab-upload.jks
+storePassword=replace-locally
+keyAlias=framelab
+keyPassword=replace-locally

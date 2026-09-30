@@ -1,0 +1,15 @@
+{
+  "offline_cold_start_guest": "passed",
+  "projects_empty_state": "passed",
+  "pro_prices_without_signup": "passed",
+  "android_back_from_pro_to_home": "passed",
+  "photo_preview": "passed",
+  "video_preview": "passed",
+  "android_back_to_home": "passed",
+  "device": "sdk_gphone16k_x86_64",
+  "api": "37",
+  "verified_date": "2026-09-28",
+  "build": "debug",
+  "apk_sha256": "11e9ef97b9a7f2493b66b7645f88d60bc274e01540f1ac84cec19bcd41805935",
+  "physical_device_validation": false
+}

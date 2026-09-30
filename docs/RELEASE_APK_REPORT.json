@@ -1,0 +1,419 @@
+[
+  {
+    "apk": "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk",
+    "bytes": 88135415,
+    "sha256": "7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c",
+    "elf_alignment_passed": true,
+    "native_libraries": [
+      {
+        "path": "lib/arm64-v8a/libapp.so",
+        "minimum_load_alignment": 65536,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libavcodec.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libavdevice.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libavfilter.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libavformat.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libavutil.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libc++_shared.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libdartjni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libdatastore_shared_counter.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libffmpegkit.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libffmpegkit_abidetect.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libflutter.so",
+        "minimum_load_alignment": 65536,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libonnxruntime.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libonnxruntime4j_jni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libswresample.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/arm64-v8a/libswscale.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      }
+    ],
+    "zip_alignment_passed": true,
+    "signature_verified": true,
+    "signer_details": [
+      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
+      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
+    ],
+    "package_details": [
+      "package: name='com.framelab.framelab' versionCode='2002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+      "sdkVersion:'24'",
+      "targetSdkVersion:'36'",
+      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
+      "uses-permission: name='android.permission.WAKE_LOCK'",
+      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
+      "uses-permission: name='android.permission.INTERNET'",
+      "application-label:'FrameLab'",
+      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "native-code: 'arm64-v8a'"
+    ]
+  },
+  {
+    "apk": "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk",
+    "bytes": 99415833,
+    "sha256": "b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df",
+    "elf_alignment_passed": true,
+    "native_libraries": [
+      {
+        "path": "lib/armeabi-v7a/libapp.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavcodec.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavcodec_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavdevice.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavdevice_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavfilter.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavfilter_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavformat.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavformat_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavutil.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libavutil_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libc++_shared.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libdartjni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libdatastore_shared_counter.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libffmpegkit.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libffmpegkit_abidetect.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libffmpegkit_armv7a_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libflutter.so",
+        "minimum_load_alignment": 65536,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libonnxruntime.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libonnxruntime4j_jni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libswresample.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libswresample_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libswscale.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      },
+      {
+        "path": "lib/armeabi-v7a/libswscale_neon.so",
+        "minimum_load_alignment": 4096,
+        "requires_16kb": false,
+        "passes": true
+      }
+    ],
+    "zip_alignment_passed": true,
+    "signature_verified": true,
+    "signer_details": [
+      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
+      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
+    ],
+    "package_details": [
+      "package: name='com.framelab.framelab' versionCode='1002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+      "sdkVersion:'24'",
+      "targetSdkVersion:'36'",
+      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
+      "uses-permission: name='android.permission.WAKE_LOCK'",
+      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
+      "uses-permission: name='android.permission.INTERNET'",
+      "application-label:'FrameLab'",
+      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "native-code: 'armeabi-v7a'"
+    ]
+  },
+  {
+    "apk": "build/app/outputs/flutter-apk/app-x86_64-release.apk",
+    "bytes": 98702859,
+    "sha256": "2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c",
+    "elf_alignment_passed": true,
+    "native_libraries": [
+      {
+        "path": "lib/x86_64/libapp.so",
+        "minimum_load_alignment": 65536,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libavcodec.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libavdevice.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libavfilter.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libavformat.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libavutil.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libc++_shared.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libdartjni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libdatastore_shared_counter.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libffmpegkit.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libffmpegkit_abidetect.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libflutter.so",
+        "minimum_load_alignment": 65536,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libonnxruntime.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libonnxruntime4j_jni.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libswresample.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      },
+      {
+        "path": "lib/x86_64/libswscale.so",
+        "minimum_load_alignment": 16384,
+        "requires_16kb": true,
+        "passes": true
+      }
+    ],
+    "zip_alignment_passed": true,
+    "signature_verified": true,
+    "signer_details": [
+      "V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug",
+      "V2 Signer: certificate SHA-256 digest: 05fb30947feda54227b4a72f5d1948117ed7d3e5832400725f9ee31e27f459ac"
+    ],
+    "package_details": [
+      "package: name='com.framelab.framelab' versionCode='4002' versionName='1.0.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+      "sdkVersion:'24'",
+      "targetSdkVersion:'36'",
+      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
+      "uses-permission: name='android.permission.WAKE_LOCK'",
+      "uses-permission: name='com.framelab.framelab.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'",
+      "uses-permission: name='android.permission.INTERNET'",
+      "application-label:'FrameLab'",
+      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='28'",
+      "native-code: 'x86_64'"
+    ]
+  }
+]
