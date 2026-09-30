@@ -42,6 +42,7 @@ The 1.1 update replaces subscriptions and advertising with unrestricted editing.
 
 - [x] 137 unit/widget tests, five Android checks and static analysis passed.
 - [x] Three APKs built/inspected; x86_64 release cold-launched offline and home visually reviewed.
+- [x] Public 1.1.0-test release: all APK/checksum download URLs verified anonymously with matching bytes and hashes.
 
 Actual 1.1 verification and APK publication are recorded in [REALTIME_UPDATE.md](REALTIME_UPDATE.md), [TESTING.md](TESTING.md), [PUBLISHING.md](PUBLISHING.md) and [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json).
 

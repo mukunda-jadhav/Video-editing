@@ -1,43 +1,43 @@
 {
   "repository": "https://github.com/mukunda-jadhav/Video-editing",
-  "tag": "v1.0.0-test",
-  "url": "https://github.com/mukunda-jadhav/Video-editing/releases/tag/v1.0.0-test",
+  "tag": "v1.1.0-test",
+  "url": "https://github.com/mukunda-jadhav/Video-editing/releases/tag/v1.1.0-test",
   "draft": false,
   "prerelease": true,
-  "published_at": "2026-09-30T10:09:32Z",
-  "verified_at_utc": "2026-09-30T10:11:24.206535+00:00",
-  "source_commit": "264f28bf0ea857775953a1e679640e369f70eafe",
-  "verification": "Unauthenticated GitHub API and direct asset HEAD requests; server SHA-256 digests match all local files; checksum file also downloaded and hashed.",
+  "published_at": "2026-09-30T16:33:43Z",
+  "verified_at_utc": "2026-09-30T16:36:22.595176+00:00",
+  "source_commit": "b46cfb5a5fb4a33585251308e927aff1bbad1574",
+  "verification": "Unauthenticated GitHub API and direct asset HEAD requests; all server SHA-256 digests and byte sizes match local files; checksum file also downloaded and hashed.",
   "assets": [
     {
       "name": "app-arm64-v8a-release.apk",
-      "bytes": 88135415,
-      "sha256": "7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c",
-      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-arm64-v8a-release.apk",
+      "bytes": 86402517,
+      "sha256": "af2980f41b317ad13ae02e0cec2221c58bff49ea669f73b7e2ec0533f56aac52",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-arm64-v8a-release.apk",
       "anonymous_http_status": 200,
-      "anonymous_content_length": 88135415
+      "anonymous_content_length": 86402517
     },
     {
       "name": "app-armeabi-v7a-release.apk",
-      "bytes": 99415833,
-      "sha256": "b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df",
-      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-armeabi-v7a-release.apk",
+      "bytes": 97420789,
+      "sha256": "6d6ca5836172bfadd311e3f83233bf43b071d4b42448b7d337ae27bfbbb33aa5",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-armeabi-v7a-release.apk",
       "anonymous_http_status": 200,
-      "anonymous_content_length": 99415833
+      "anonymous_content_length": 97420789
     },
     {
       "name": "app-x86_64-release.apk",
-      "bytes": 98702859,
-      "sha256": "2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c",
-      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-x86_64-release.apk",
+      "bytes": 96904428,
+      "sha256": "f188702adad15bfc66464cff7473d8160746ffaac11a2b949fe894f722744783",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-x86_64-release.apk",
       "anonymous_http_status": 200,
-      "anonymous_content_length": 98702859
+      "anonymous_content_length": 96904428
     },
     {
       "name": "SHA256SUMS.txt",
       "bytes": 278,
-      "sha256": "eac29befeea2bf35b5d9ef63e4b63d7859f543a90ffda48675e56a9260a330ae",
-      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/SHA256SUMS.txt",
+      "sha256": "cba27d32006ecd172c2a996be60a4c681d3ce784dba8a4af548f837da6fedaf8",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/SHA256SUMS.txt",
       "anonymous_http_status": 200,
       "anonymous_content_length": 278
     }
