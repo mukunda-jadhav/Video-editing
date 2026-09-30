@@ -144,3 +144,13 @@ Storage uses recoverable files rather than the database suggested earlier. Undo 
 - [x] README, architecture, dependency/asset inventory and current master checklist supplied.
 - [x] Actual validation evidence separated from instructions and future release gates.
 - [ ] All native/physical-device release gates passed before labelling the app production ready.
+
+## GitHub test distribution — published
+
+- [x] Source pushed to [mukunda-jadhav/Video-editing](https://github.com/mukunda-jadhav/Video-editing).
+- [x] Public [v1.0.0-test prerelease](https://github.com/mukunda-jadhav/Video-editing/releases/tag/v1.0.0-test) contains ARM64, ARMv7 and x86_64 APKs plus SHA-256 checksums.
+- [x] README download buttons and testing-guide APK links use pinned public release URLs.
+- [x] All server artifact hashes match local files; anonymous direct downloads return HTTP 200 and expected sizes.
+- [x] Test signing, mock Pro and remaining production qualification are disclosed in the README and release notes.
+
+Publication evidence: [PUBLISHING.md](PUBLISHING.md) and [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json).

@@ -1,0 +1,45 @@
+{
+  "repository": "https://github.com/mukunda-jadhav/Video-editing",
+  "tag": "v1.0.0-test",
+  "url": "https://github.com/mukunda-jadhav/Video-editing/releases/tag/v1.0.0-test",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-09-30T10:09:32Z",
+  "verified_at_utc": "2026-09-30T10:11:24.206535+00:00",
+  "source_commit": "264f28bf0ea857775953a1e679640e369f70eafe",
+  "verification": "Unauthenticated GitHub API and direct asset HEAD requests; server SHA-256 digests match all local files; checksum file also downloaded and hashed.",
+  "assets": [
+    {
+      "name": "app-arm64-v8a-release.apk",
+      "bytes": 88135415,
+      "sha256": "7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-arm64-v8a-release.apk",
+      "anonymous_http_status": 200,
+      "anonymous_content_length": 88135415
+    },
+    {
+      "name": "app-armeabi-v7a-release.apk",
+      "bytes": 99415833,
+      "sha256": "b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-armeabi-v7a-release.apk",
+      "anonymous_http_status": 200,
+      "anonymous_content_length": 99415833
+    },
+    {
+      "name": "app-x86_64-release.apk",
+      "bytes": 98702859,
+      "sha256": "2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-x86_64-release.apk",
+      "anonymous_http_status": 200,
+      "anonymous_content_length": 98702859
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 278,
+      "sha256": "eac29befeea2bf35b5d9ef63e4b63d7859f543a90ffda48675e56a9260a330ae",
+      "download_url": "https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/SHA256SUMS.txt",
+      "anonymous_http_status": 200,
+      "anonymous_content_length": 278
+    }
+  ]
+}

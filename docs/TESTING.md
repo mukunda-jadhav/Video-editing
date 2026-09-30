@@ -34,9 +34,9 @@ All files are test builds generated locally on 30 September 2026, with `ENABLE_M
 
 | APK | Bytes | MiB | SHA-256 |
 |---|---:|---:|---|
-| [ARM64](../build/app/outputs/flutter-apk/app-arm64-v8a-release.apk) | 88135415 | 84.1 | `7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c` |
-| [ARMv7](../build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk) | 99415833 | 94.8 | `b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df` |
-| [x86_64](../build/app/outputs/flutter-apk/app-x86_64-release.apk) | 98702859 | 94.1 | `2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c` |
+| [ARM64](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-arm64-v8a-release.apk) | 88135415 | 84.1 | `7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c` |
+| [ARMv7](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-armeabi-v7a-release.apk) | 99415833 | 94.8 | `b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df` |
+| [x86_64](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-x86_64-release.apk) | 98702859 | 94.1 | `2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c` |
 
 Native editing/model/media publication tests above ran in debug integration builds. The release APK was checked for packaging/signature/alignment and main-app launch; release-mode media operations and physical-device quality/performance still need the acceptance matrix.
 

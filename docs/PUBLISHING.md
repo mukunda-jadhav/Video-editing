@@ -4,7 +4,9 @@ Prepared on 30 September 2026 for [mukunda-jadhav/Video-editing](https://github.
 
 ## Publication status
 
-The intended GitHub prerelease tag is **v1.0.0-test**. Source and APK assets are prepared; publication/upload confirmation is pending. This document does not claim the GitHub release is already available. After the release assets are uploaded, the README download buttons will link directly to those APK files.
+Published on 30 September 2026: [**v1.0.0-test — download the Android APKs**](https://github.com/mukunda-jadhav/Video-editing/releases/tag/v1.0.0-test). The source is pushed to `main`; the release tag identifies source commit `264f28bf0ea857775953a1e679640e369f70eafe`. All three APKs and `SHA256SUMS.txt` are public release assets. The README download buttons and testing-guide links point directly to these files.
+
+Unauthenticated download checks returned HTTP 200 with the expected file sizes and attachment filenames. GitHub's SHA-256 digests match every local artifact; the downloaded checksum file also matches. [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json) records the release URL, source commit, hashes and anonymous-download verification. GitHub sign-in is not required to download the APKs.
 
 This is a testing prerelease. It enables the local Pro simulator, uses the Android debug test signing key, and makes no charge or real email-verification claim. Premium prices remain ₹39/month and ₹299/year. Free editing requires no account.
 
