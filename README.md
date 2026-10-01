@@ -4,9 +4,9 @@ A free, offline Flutter Android photo and video editor. All templates, filters, 
 
 ## Download
 
-[![Download Android APK](https://img.shields.io/badge/Download_APK-Android_ARM64-40E0D0?style=for-the-badge&logo=android&logoColor=black)](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-arm64-v8a-release.apk)
+[![Download Android APK](https://img.shields.io/badge/Download_APK-Android_ARM64-40E0D0?style=for-the-badge&logo=android&logoColor=black)](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.2.0-test/app-arm64-v8a-release.apk)
 
-[ARM64 — most phones](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-arm64-v8a-release.apk) · [ARMv7 — 32-bit phones](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-armeabi-v7a-release.apk) · [x86_64 — emulator](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/app-x86_64-release.apk) · [Checksums](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.1.0-test/SHA256SUMS.txt)
+[ARM64 — most phones](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.2.0-test/app-arm64-v8a-release.apk) · [ARMv7 — 32-bit phones](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.2.0-test/app-armeabi-v7a-release.apk) · [x86_64 — emulator](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.2.0-test/app-x86_64-release.apk) · [Checksums](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.2.0-test/SHA256SUMS.txt)
 
 Android 7.0/API 24 or later. Open the APK after downloading and allow installation from your browser/file manager when prompted. If a browser stalls finishing the file, copy the download link into Chrome. This test prerelease uses the same development signing key as the previous version and a higher version code, so it can update an existing installation.
 

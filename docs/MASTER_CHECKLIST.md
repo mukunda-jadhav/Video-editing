@@ -11,7 +11,7 @@
 - [x] Current static analysis: no issues; full unit/widget suite: 173 passed.
 - [x] Seven Android checks passed on Pixel 8 API 37 x86_64 / 16 KB emulator: cutout/placement, live edits and native media.
 - [x] 1.2 normal release APKs built; signatures, ZIP/64-bit ELF 16 KB checks and offline x86_64 release launch passed.
-- [ ] Public 1.2 download publication and anonymous asset/hash verification.
+- [x] Public 1.2 download publication and anonymous asset/hash verification.
 - [ ] Tracked manual video brushes/subject masks (current manual brushes are fixed source regions).
 
 Current verification is recorded in [CANVAS_UPDATE.md](CANVAS_UPDATE.md) and [TESTING.md](TESTING.md). Debug native tests do not complete release/store or physical-phone qualification.

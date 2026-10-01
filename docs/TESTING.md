@@ -17,7 +17,7 @@ Current-source verification record, 1 October 2026. The application is version *
 
 The seven Android checks comprise **2 cutout/placement + 2 live-edit + 3 native-media checks**. Running component test files again is a rerun, not extra unique coverage. ONNX pipeline assertions on synthetic images do not establish real-world subject/hair quality. Cutout audio is AAC-transcoded; track presence is verified, not bit-identical audio or universal lip-sync accuracy.
 
-All three normal 1.2 release APKs built and passed signature, ZIP and 64-bit ELF 16 KB checks: [RELEASE_APK_REPORT.json](RELEASE_APK_REPORT.json). ABI version codes are ARM64 2004, ARMv7 1004 and x86_64 4004 (base code 4). The installed x86_64 release cold-launched offline in **3713 ms**, with no fatal Flutter/AndroidRuntime errors: [launch record](CANVAS_ANDROID_RELEASE.json), [reviewed home](screenshots/v12-release-home.png). This is one emulator launch observation; release-mode editing and physical-phone qualification remain open. Public 1.2 download verification remains pending.
+All three normal 1.2 release APKs built and passed signature, ZIP and 64-bit ELF 16 KB checks: [RELEASE_APK_REPORT.json](RELEASE_APK_REPORT.json). ABI version codes are ARM64 2004, ARMv7 1004 and x86_64 4004 (base code 4). The installed x86_64 release cold-launched offline in **3713 ms**, with no fatal Flutter/AndroidRuntime errors: [launch record](CANVAS_ANDROID_RELEASE.json), [reviewed home](screenshots/v12-release-home.png). This is one emulator launch observation; release-mode editing and physical-phone qualification remain open. All public 1.2 APK/checksum downloads and hashes are verified: [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json).
 
 ## Setup and repeatable commands
 
