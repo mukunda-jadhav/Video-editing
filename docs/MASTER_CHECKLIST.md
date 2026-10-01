@@ -60,10 +60,11 @@ The app remains free after the 1.1 removal of subscriptions/advertising. The 1.2
 
 - [x] Current 1.2: 173 unit/widget tests, seven Android checks and static analysis passed.
 - [x] Previous 1.1 distribution: three APKs built/inspected; x86_64 release cold-launched offline and home visually reviewed.
-- [ ] Current 1.2 release APK inspection, installed-release acceptance and public distribution (pending).
+- [x] Current 1.2 APK signatures/alignment, offline x86_64 release launch and public downloads verified.
+- [ ] Release-mode media editing acceptance on physical ARM phones.
 - [x] Public 1.1.0-test release: all APK/checksum download URLs verified anonymously with matching bytes and hashes.
 
-Historical 1.1 verification and APK publication are recorded in [REALTIME_UPDATE.md](REALTIME_UPDATE.md), [TESTING.md](TESTING.md), [PUBLISHING.md](PUBLISHING.md) and [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json).
+Historical 1.1 verification is in [REALTIME_UPDATE.md](REALTIME_UPDATE.md). Current 1.2 evidence is in [TESTING.md](TESTING.md), [PUBLISHING.md](PUBLISHING.md) and [PUBLISHED_RELEASE.json](PUBLISHED_RELEASE.json).
 
 - [ ] Physical ARM phone: frame timings during continuous gestures and video scrubbing.
 - [ ] Low/mid/high phone memory, thermal/battery, export compatibility and long-project stress checks.
