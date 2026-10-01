@@ -10,6 +10,10 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Rect
 import android.media.ExifInterface
@@ -54,29 +58,31 @@ class LocalMediaBridge(private val activity: Activity) {
                 "modelBundled" to true, "inferenceRuntime" to "ONNX Runtime 1.30.0"))
             return
         }
-        if (method != "publish" && method != "removeBackground" && method != "getVideoThumbnail") { result.notImplemented(); return }
+        if (method != "publish" && method != "removeBackground" && method != "getVideoThumbnail" && method != "processVideoCutoutFrames") { result.notImplemented(); return }
         if (closed) { result.error("CLOSED", "The media service is closed.", null); return }
-        if (method == "removeBackground" && !segmenting.compareAndSet(false, true)) {
+        val segmentation = method == "removeBackground" || method == "processVideoCutoutFrames"
+        if (segmentation && !segmenting.compareAndSet(false, true)) {
             result.error("BUSY", "Background removal is already running.", null); return
         }
-        if (method == "removeBackground") cancelled.set(false)
+        if (segmentation) cancelled.set(false)
         worker.execute {
             try {
                 val path = args["path"] as? String ?: error("No media path supplied.")
-                val file = privateFile(path)
+                val file = if (method == "processVideoCutoutFrames") privateFrameDirectory(path) else privateFile(path)
                 val output = when (method) {
                     "publish" -> publish(file, args["name"] as? String ?: "FrameLab.png", args["video"] == true)
                     "getVideoThumbnail" -> videoThumbnail(file, (args["timeSeconds"] as? Number)?.toDouble() ?: 0.0)
+                    "processVideoCutoutFrames" -> processVideoCutoutFrames(file, args)
                     else -> removeBackground(file)
                 }
                 activity.runOnUiThread { result.success(output) }
             } catch (error: OutOfMemoryError) {
                 activity.runOnUiThread { result.error("MEMORY", "This image exceeds available memory. Try a smaller image.", null) }
             } catch (error: Exception) {
-                val message = if (cancelled.get() && method == "removeBackground") "Background removal cancelled." else (error.message ?: "Local media operation failed.")
-                activity.runOnUiThread { result.error(if (cancelled.get() && method == "removeBackground") "CANCELLED" else "MEDIA", message, null) }
+                val message = if (cancelled.get() && segmentation) "Background removal cancelled." else (error.message ?: "Local media operation failed.")
+                activity.runOnUiThread { result.error(if (cancelled.get() && segmentation) "CANCELLED" else "MEDIA", message, null) }
             } finally {
-                if (method == "removeBackground") segmenting.set(false)
+                if (segmentation) segmenting.set(false)
             }
         }
     }
@@ -187,12 +193,12 @@ class LocalMediaBridge(private val activity: Activity) {
         return destination.path
     }
 
-    private fun decodeBounded(file: File): Bitmap {
+    private fun decodeBounded(file: File, maxEdge: Int = 4096): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Unsupported or damaged image." }
         var sample = 1
-        while (max(bounds.outWidth, bounds.outHeight) / sample > 4096) sample *= 2
+        while (max(bounds.outWidth, bounds.outHeight) / sample > maxEdge) sample *= 2
         val bitmap = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888; inMutable = true }) ?: error("Could not decode the image.")
         val orientation = try { ExifInterface(file.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) } catch (_: Exception) { ExifInterface.ORIENTATION_NORMAL }
         val matrix = Matrix()
@@ -216,81 +222,254 @@ class LocalMediaBridge(private val activity: Activity) {
         return oriented
     }
 
-    private fun removeBackground(source: File): String {
-        val original = decodeBounded(source)
+    private fun <T> withSegmentationSession(action: (OrtSession) -> T): T {
+        val model = File(activity.filesDir, "models/u2netp.onnx")
+        if (!model.isFile || model.length() != 4574861L) {
+            require(model.parentFile?.exists() == true || model.parentFile?.mkdirs() == true) {
+                "The local model directory could not be created."
+            }
+            activity.assets.open("models/u2netp.onnx").use { stream ->
+                model.outputStream().use { stream.copyTo(it) }
+            }
+        }
+        val env = OrtEnvironment.getEnvironment()
+        return OrtSession.SessionOptions().use { options ->
+            options.setIntraOpNumThreads(2)
+            options.setInterOpNumThreads(1)
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            env.createSession(model.path, options).use(action)
+        }
+    }
+
+    /** Shared inference for a photo or a chunk of video frames. A chunk opens
+     * one model session, then serially recycles each frame and mask. */
+    private fun inferMask(original: Bitmap, session: OrtSession): Bitmap {
         var resized: Bitmap? = null
-        var maskSmall: Bitmap? = null
         try {
+            if (cancelled.get()) error("Background removal cancelled.")
             resized = Bitmap.createScaledBitmap(original, 320, 320, true)
-            val pixels = IntArray(320*320)
-            resized.getPixels(pixels,0,320,0,0,320,320)
-            // Match U2Net/rembg normalization, including image-max normalization.
+            val pixels = IntArray(320 * 320)
+            resized.getPixels(pixels, 0, 320, 0, 0, 320, 320)
             var largest = 1f
-            for (pixel in pixels) largest=max(largest,max(Color.red(pixel),max(Color.green(pixel),Color.blue(pixel))).toFloat())
-            val input = ByteBuffer.allocateDirect(3*320*320*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-            val means = floatArrayOf(.485f,.456f,.406f)
-            val stds = floatArrayOf(.229f,.224f,.225f)
+            for (pixel in pixels) largest = max(largest,
+                max(Color.red(pixel), max(Color.green(pixel), Color.blue(pixel))).toFloat())
+            val input = ByteBuffer.allocateDirect(3 * 320 * 320 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val means = floatArrayOf(.485f, .456f, .406f)
+            val stds = floatArrayOf(.229f, .224f, .225f)
             for (channel in 0..2) for (pixel in pixels) {
-                val value = when(channel) { 0 -> Color.red(pixel); 1 -> Color.green(pixel); else -> Color.blue(pixel) }
-                input.put((value/largest-means[channel])/stds[channel])
+                val value = when (channel) {
+                    0 -> Color.red(pixel); 1 -> Color.green(pixel); else -> Color.blue(pixel)
+                }
+                input.put((value / largest - means[channel]) / stds[channel])
             }
             input.rewind()
-            val model = File(activity.filesDir,"models/u2netp.onnx")
-            if (!model.isFile || model.length() != 4574861L) {
-                model.parentFile?.mkdirs()
-                activity.assets.open("models/u2netp.onnx").use { stream -> model.outputStream().use { stream.copyTo(it) } }
-            }
-            val env = OrtEnvironment.getEnvironment()
-            val prediction = FloatArray(320*320)
-            OrtSession.SessionOptions().use { options ->
-                options.setIntraOpNumThreads(2)
-                options.setInterOpNumThreads(1)
-                options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                env.createSession(model.path,options).use { session ->
-                    OnnxTensor.createTensor(env,input,longArrayOf(1,3,320,320)).use { tensor ->
-                        OrtSession.RunOptions().use { run ->
-                            synchronized(runLock) {
-                                if (cancelled.get()) error("Background removal cancelled.")
-                                activeRun = run
-                            }
-                            try {
-                                session.run(mapOf(session.inputNames.first() to tensor),run).use { results ->
-                                    (results[0] as OnnxTensor).floatBuffer.get(prediction)
-                                }
-                            } finally {
-                                // The UI must never terminate already-closed RunOptions.
-                                synchronized(runLock) { activeRun = null }
-                            }
-                        }
+            val prediction = FloatArray(320 * 320)
+            OnnxTensor.createTensor(OrtEnvironment.getEnvironment(), input,
+                longArrayOf(1, 3, 320, 320)).use { tensor ->
+                OrtSession.RunOptions().use { run ->
+                    synchronized(runLock) {
+                        if (cancelled.get()) error("Background removal cancelled.")
+                        activeRun = run
                     }
+                    try {
+                        session.run(mapOf(session.inputNames.first() to tensor), run).use { results ->
+                            (results[0] as OnnxTensor).floatBuffer.get(prediction)
+                        }
+                    } finally { synchronized(runLock) { activeRun = null } }
                 }
             }
             if (cancelled.get()) error("Background removal cancelled.")
             val low = prediction.minOrNull() ?: 0f
             val high = prediction.maxOrNull() ?: 1f
-            val range = max(high-low,0.000001f)
+            val range = max(high - low, .000001f)
             for (i in pixels.indices) {
-                val alpha = (((prediction[i]-low)/range)*255f).toInt().coerceIn(0,255)
-                pixels[i] = Color.argb(alpha,255,255,255)
+                val alpha = (((prediction[i] - low) / range) * 255f).toInt().coerceIn(0, 255)
+                pixels[i] = Color.argb(alpha, 255, 255, 255)
             }
-            maskSmall = Bitmap.createBitmap(pixels,320,320,Bitmap.Config.ARGB_8888)
-            // Scale the small mask while drawing directly into the mutable source.
-            // This avoids two additional full-resolution ARGB bitmaps (128 MiB
-            // for a 4096-square photo), while keeping the source file untouched.
-            original.setHasAlpha(true)
-            val canvas = Canvas(original)
-            canvas.drawBitmap(maskSmall,null,Rect(0,0,original.width,original.height),Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { xfermode=android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN) })
-            // Keep the result beside its source asset so project deletion cleans it.
-            val destination = File(source.parentFile,"cutout_${System.nanoTime()}.png")
-            try { destination.outputStream().use { require(original.compress(Bitmap.CompressFormat.PNG,100,it)) } }
-            catch (error: Exception) { destination.delete(); throw error }
+            return Bitmap.createBitmap(pixels, 320, 320, Bitmap.Config.ARGB_8888)
+        } finally { if (resized !== original) resized?.recycle() }
+    }
+
+    private fun applyMask(original: Bitmap, mask: Bitmap) {
+        original.setHasAlpha(true)
+        Canvas(original).drawBitmap(mask, null, Rect(0, 0, original.width, original.height),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+            })
+    }
+
+    private fun removeBackground(source: File): String {
+        val original = decodeBounded(source)
+        var mask: Bitmap? = null
+        try {
+            mask = withSegmentationSession { session -> inferMask(original, session) }
+            applyMask(original, mask)
+            val destination = File(source.parentFile, "cutout_${System.nanoTime()}.png")
+            try {
+                destination.outputStream().use {
+                    require(original.compress(Bitmap.CompressFormat.PNG, 100, it)) { "PNG encoding failed." }
+                }
+            } catch (error: Exception) { destination.delete(); throw error }
             if (cancelled.get()) { destination.delete(); error("Background removal cancelled.") }
             return destination.path
-        } finally {
-            maskSmall?.recycle()
-            if (resized != original) resized?.recycle()
-            original.recycle()
+        } finally { mask?.recycle(); original.recycle() }
+    }
+
+    private fun privateFrameDirectory(path: String): File {
+        val folder = File(path).canonicalFile
+        val roots = listOf(activity.filesDir.canonicalPath, activity.cacheDir.canonicalPath)
+        require(folder.isDirectory && roots.any { folder.path.startsWith(it + File.separator) }) {
+            "Video frames must be inside a private working directory."
         }
+        return folder
+    }
+
+    private data class BrushStroke(val erase: Boolean, val radius: Float,
+        val points: List<Pair<Float, Float>>)
+
+    private fun parseBrushStrokes(value: Any?): List<BrushStroke> {
+        if (value == null) return emptyList()
+        val items = value as? List<*> ?: error("Invalid manual brushes.")
+        require(items.size <= 200) { "Too many manual brush strokes." }
+        return items.map { item ->
+            val map = item as? Map<*, *> ?: error("Invalid manual brush.")
+            val mode = map["mode"] as? String ?: error("A brush needs an erase or restore mode.")
+            require(mode == "erase" || mode == "restore") { "Unknown brush mode." }
+            val radius = (map["radius"] as? Number)?.toFloat() ?: error("A brush needs a radius.")
+            require(radius.isFinite() && radius > 0 && radius <= 1f) { "Invalid brush radius." }
+            val points = map["points"] as? List<*> ?: error("A brush needs points.")
+            require(points.isNotEmpty() && points.size <= 4096) { "Invalid brush point count." }
+            BrushStroke(mode == "erase", radius, points.map { point ->
+                val pair = point as? Map<*, *> ?: error("Invalid brush point.")
+                val x = (pair["x"] as? Number)?.toFloat() ?: error("Invalid brush x.")
+                val y = (pair["y"] as? Number)?.toFloat() ?: error("Invalid brush y.")
+                require(x.isFinite() && y.isFinite() && x in 0f..1f && y in 0f..1f) {
+                    "Brush points must be normalized to the image."
+                }
+                x to y
+            })
+        }
+    }
+
+    private fun applyBrushes(cutout: Bitmap, original: Bitmap, strokes: List<BrushStroke>) {
+        val canvas = Canvas(cutout)
+        for (stroke in strokes) {
+            val radius = stroke.radius * min(original.width, original.height)
+            val points = stroke.points.map { it.first * original.width to it.second * original.height }
+            if (stroke.erase) {
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE; strokeWidth = radius * 2
+                    strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+                }
+                if (points.size == 1) {
+                    paint.style = Paint.Style.FILL
+                    canvas.drawCircle(points[0].first, points[0].second, radius, paint)
+                } else {
+                    val path = Path().apply {
+                        moveTo(points[0].first, points[0].second)
+                        for (point in points.drop(1)) lineTo(point.first, point.second)
+                    }
+                    canvas.drawPath(path, paint)
+                }
+            } else {
+                val region = Path()
+                for (point in points) region.addCircle(point.first, point.second, radius, Path.Direction.CW)
+                for (i in 1 until points.size) {
+                    val a = points[i - 1]; val b = points[i]
+                    val dx = b.first - a.first; val dy = b.second - a.second
+                    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+                    if (distance == 0f) continue
+                    val nx = -dy * radius / distance; val ny = dx * radius / distance
+                    // Same winding as circles: overlap remains filled.
+                    region.moveTo(a.first - nx, a.second - ny)
+                    region.lineTo(b.first - nx, b.second - ny)
+                    region.lineTo(b.first + nx, b.second + ny)
+                    region.lineTo(a.first + nx, a.second + ny)
+                    region.close()
+                }
+                canvas.save()
+                canvas.clipPath(region)
+                canvas.drawBitmap(original, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC)
+                })
+                canvas.restore()
+            }
+        }
+    }
+
+    private fun drawFilledBackground(canvas: Canvas, background: Bitmap, width: Int, height: Int) {
+        val scale = max(width.toFloat() / background.width, height.toFloat() / background.height)
+        val drawWidth = background.width * scale; val drawHeight = background.height * scale
+        canvas.drawBitmap(background, null, RectF((width - drawWidth) / 2, (height - drawHeight) / 2,
+            (width + drawWidth) / 2, (height + drawHeight) / 2),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+    }
+
+    /** A maximum of 30 frames bounds storage and memory. Dart extracts further
+     * chunks and retains original audio while encoding the processed video.
+     * Manual strokes are fixed image regions, reapplied to each frame; no
+     * tracking or temporal quality guarantee is implied. */
+    private fun processVideoCutoutFrames(folder: File, args: Map<String, Any?>): String {
+        val frames = folder.listFiles { file -> file.isFile && file.extension.lowercase() == "png" }
+            ?.sortedBy { it.name } ?: emptyList()
+        require(frames.isNotEmpty() && frames.size <= 30) { "Process between 1 and 30 video frames per chunk." }
+        val strokes = parseBrushStrokes(args["strokes"])
+        val automatic = args["automatic"] != false
+        val suppliedColor = (args["backgroundColor"] as? Number)?.toInt() ?: Color.BLACK
+        val color = Color.rgb(Color.red(suppliedColor), Color.green(suppliedColor), Color.blue(suppliedColor))
+        val backgroundPath = args["backgroundPath"] as? String
+        var background: Bitmap? = null
+        try {
+            if (backgroundPath != null) background = decodeBounded(privateFile(backgroundPath), 1920)
+            val processFrames: (OrtSession?) -> Unit = { session ->
+                for (frame in frames) {
+                    if (cancelled.get()) error("Background removal cancelled.")
+                    val source = privateFile(frame.path)
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(source.path, bounds)
+                    require(bounds.outWidth in 1..1920 && bounds.outHeight in 1..1920) {
+                        "Video cutout frames must have a maximum edge of 1920 pixels."
+                    }
+                    require(StatFs(folder.path).availableBytes >
+                        bounds.outWidth.toLong() * bounds.outHeight * 8 + 16L * 1024 * 1024) {
+                        "Not enough storage to refine the next video frame."
+                    }
+                    val original = decodeBounded(source, 1920)
+                    var cutout: Bitmap? = null
+                    var mask: Bitmap? = null
+                    var output: Bitmap? = null
+                    val temporary = File(folder, "${frame.name}.pending")
+                    try {
+                        cutout = original.copy(Bitmap.Config.ARGB_8888, true)
+                        cutout.setHasAlpha(true)
+                        if (automatic) {
+                            mask = inferMask(original, requireNotNull(session))
+                            applyMask(cutout, mask)
+                        }
+                        applyBrushes(cutout, original, strokes)
+                        output = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+                        output.setHasAlpha(false)
+                        val canvas = Canvas(output)
+                        canvas.drawColor(color)
+                        background?.let { drawFilledBackground(canvas, it, output.width, output.height) }
+                        canvas.drawBitmap(cutout, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG))
+                        temporary.outputStream().use {
+                            require(output.compress(Bitmap.CompressFormat.PNG, 100, it)) { "Frame encoding failed." }
+                        }
+                        if (cancelled.get()) error("Background removal cancelled.")
+                        require(temporary.renameTo(frame)) { "Could not replace the refined video frame." }
+                    } finally {
+                        temporary.delete(); output?.recycle(); mask?.recycle()
+                        cutout?.recycle(); original.recycle()
+                    }
+                }
+            }
+            if (automatic) withSegmentationSession { session -> processFrames(session) }
+            else processFrames(null)
+            return folder.path
+        } finally { background?.recycle() }
     }
 
     fun close() {

@@ -4,9 +4,11 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/filter_strip.dart';
 import '../data/ffmpeg_video_renderer.dart';
 import '../domain/video_document.dart';
 import '../domain/video_history.dart';
@@ -27,6 +29,8 @@ class VideoEditorScreen extends StatefulWidget {
     this.renderer,
     this.playerFactory,
     this.thumbnailLoader,
+    this.refineImageBackground,
+    this.removeVideoBackground,
   });
   final Map<String, dynamic>? initialData;
   final Future<void> Function(
@@ -47,6 +51,11 @@ class VideoEditorScreen extends StatefulWidget {
   final Future<String?> Function(String path, double timeSeconds)?
   thumbnailLoader;
 
+  /// Explicit offline processing; canvas gestures never invoke these jobs.
+  final Future<String?> Function(String originalPath, String? initialMaskPath)?
+  refineImageBackground;
+  final Future<VideoClip?> Function(VideoClip clip)? removeVideoBackground;
+
   @override
   State<VideoEditorScreen> createState() => _VideoEditorScreenState();
 }
@@ -60,6 +69,26 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   String? _previewPath;
   String? _error;
   String _tool = 'Trim';
+  bool _panelOpen = true;
+  String _canvasTarget = 'clip';
+  final _canvasKey = GlobalKey();
+  final _layerKeys = <String, GlobalKey>{};
+  final _overlayRatios = <String, Future<double>>{};
+  String? _gestureTarget;
+  final _canvasPointerOrigins = <int, Offset>{};
+  final _canvasPointerPositions = <int, Offset>{};
+  bool _gestureSessionActive = false;
+  Offset _gestureFocal = Offset.zero;
+  Offset _gestureCenter = Offset.zero;
+  Offset _gestureCanvasFocal = Offset.zero;
+  Size _gestureFrame = Size.zero;
+  VideoClip? _gestureClip;
+  VideoOverlay? _gestureOverlay;
+  VideoText? _gestureText;
+  bool _gestureChanged = false;
+  bool _snapX = false;
+  bool _snapY = false;
+  bool _processingCutout = false;
   String _stage = 'Preparing export';
   int _selected = 0;
   int _revision = 0;
@@ -98,6 +127,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   static const _tools = <(String, IconData)>[
     ('Trim', Icons.content_cut_rounded),
     ('Canvas', Icons.crop_rounded),
+    ('Cutout', Icons.person_outline_rounded),
     ('Speed', Icons.speed_rounded),
     ('Audio', Icons.music_note_rounded),
     ('Text', Icons.text_fields_rounded),
@@ -119,6 +149,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   VideoClip? get _clip => _document.clips.isEmpty
       ? null
       : _document.clips[_selected.clamp(0, _document.clips.length - 1)];
+  VideoOverlay? get _activeOverlay =>
+      _document.overlays
+          .where((layer) => 'overlay:${layer.id}' == _canvasTarget)
+          .firstOrNull ??
+      _document.overlay;
   String _id() => DateTime.now().microsecondsSinceEpoch.toString();
   String _time(double value) =>
       '${(value / 60).floor().toString().padLeft(2, '0')}:${(value % 60).toStringAsFixed(1).padLeft(4, '0')}';
@@ -193,6 +228,16 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       if (!render && _previewRevision == _revision) _previewRevision++;
       if (render) _composedPreview = false;
       _document = document;
+      if (_canvasTarget.startsWith('overlay:') &&
+              !document.overlays.any(
+                (layer) => 'overlay:${layer.id}' == _canvasTarget,
+              ) ||
+          _canvasTarget.startsWith('text:') &&
+              !document.texts.any(
+                (layer) => 'text:${layer.id}' == _canvasTarget,
+              )) {
+        _canvasTarget = 'clip';
+      }
       _selected = _selected.clamp(0, math.max(0, document.clips.length - 1));
       _revision++;
       _error = null;
@@ -231,6 +276,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   }
 
   void _refreshThumbnailAnchors() {
+    final layerTargets = {
+      ..._document.overlays.map((layer) => 'overlay:${layer.id}'),
+      ..._document.texts.map((text) => 'text:${text.id}'),
+    };
+    _layerKeys.removeWhere((target, _) => !layerTargets.contains(target));
+    final overlayPaths = _document.overlays.map((layer) => layer.path).toSet();
+    _overlayRatios.removeWhere((path, _) => !overlayPaths.contains(path));
     final ids = _document.clips.map((clip) => clip.id).toSet();
     _thumbnailAnchors.removeWhere((id, _) => !ids.contains(id));
     for (final clip in _document.clips) {
@@ -661,14 +713,36 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   }
 
   Future<void> _pickOverlay() async {
+    if (_document.overlays.length >= VideoEditingLimits.overlays) {
+      _message(
+        'This project supports ${VideoEditingLimits.overlays} image overlays. Remove a layer before adding another.',
+      );
+      return;
+    }
     try {
       final path = await widget.pickImage();
       if (path != null && mounted) {
         _change(
           _document.copyWith(
-            overlay: VideoOverlay(path: path, end: _document.duration),
+            overlays: [
+              ..._document.overlays,
+              VideoOverlay(
+                id: _id(),
+                path: path,
+                end: _document.duration,
+                x: .5,
+                y: .5,
+                width: .35,
+                centered: true,
+              ),
+            ],
           ),
         );
+        setState(() {
+          _canvasTarget = 'overlay:${_document.overlays.last.id}';
+          _tool = 'Overlay';
+          _panelOpen = true;
+        });
       }
     } catch (error) {
       _message('Image could not be opened. $error');
@@ -922,12 +996,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                         Expanded(child: _preview()),
                       _playback(),
                       _timeline(),
-                      SizedBox(
-                        height: compact
-                            ? 210
-                            : math.min(190, constraints.maxHeight * .28),
-                        child: _toolPanel(),
-                      ),
+                      if (_panelOpen)
+                        SizedBox(
+                          height: compact
+                              ? 210
+                              : math.min(190, constraints.maxHeight * .28),
+                          child: _toolPanel(),
+                        ),
                       _toolbar(),
                     ];
                     return compact
@@ -1171,14 +1246,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
     VideoClip clip,
   ) => LayoutBuilder(
     builder: (context, constraints) {
-      final frameWidth = constraints.maxWidth;
-      final frameHeight = constraints.maxHeight;
-      final source = player.value.size;
-      final scale =
-          math.max(frameWidth / source.width, frameHeight / source.height) *
-          clip.zoom;
-      final width = source.width * scale;
-      final height = source.height * scale;
+      final frame = Size(constraints.maxWidth, constraints.maxHeight);
+      final placement = VideoCanvasPlacement.forClip(
+        clip,
+        canvasWidth: frame.width,
+        canvasHeight: frame.height,
+        sourceWidth: player.value.size.width,
+        sourceHeight: player.value.size.height,
+      );
       Widget video = ColorFiltered(
         key: const ValueKey('video-live-color'),
         colorFilter: ColorFilter.matrix(VideoPreviewColor.matrix(clip)),
@@ -1193,107 +1268,584 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           child: video,
         );
       }
-      final videoTexture = Positioned(
+      final texture = Positioned(
         key: const ValueKey('video-live-crop'),
-        left: -(width - frameWidth) * clip.cropX,
-        top: -(height - frameHeight) * clip.cropY,
-        width: width,
-        height: height,
+        left: placement.left,
+        top: placement.top,
+        width: placement.width,
+        height: placement.height,
         child: video,
       );
       return ClipRect(
-        child: ValueListenableBuilder<double>(
-          valueListenable: _position,
-          child: videoTexture,
-          builder: (context, position, texture) {
-            final local =
-                (position - VideoPreviewPosition.startOf(_document, _selected))
-                    .clamp(0, clip.duration);
-            final fadeTime = math.min(.4, clip.duration / 3);
-            final opacity = clip.effect == VideoEffect.fade
-                ? math
-                      .min(local / fadeTime, (clip.duration - local) / fadeTime)
-                      .clamp(0, 1)
-                      .toDouble()
-                : 1.0;
-            final overlay = _document.overlay;
-            return Stack(
-              clipBehavior: Clip.hardEdge,
-              children: [
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: opacity,
-                    child: Stack(children: [texture!]),
-                  ),
-                ),
-                if (clip.effect == VideoEffect.vignette ||
-                    clip.filter == VideoFilter.cinema)
+        key: _canvasKey,
+        child: Listener(
+          onPointerDown: (event) {
+            if (_gestureSessionActive) {
+              _canvasPointerOrigins.addAll(_canvasPointerPositions);
+            }
+            _canvasPointerOrigins[event.pointer] = event.position;
+            _canvasPointerPositions[event.pointer] = event.position;
+          },
+          onPointerMove: (event) =>
+              _canvasPointerPositions[event.pointer] = event.position,
+          onPointerUp: (event) => _releaseCanvasPointer(event.pointer),
+          onPointerCancel: (event) => _releaseCanvasPointer(event.pointer),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _position,
+            child: texture,
+            builder: (context, position, videoTexture) {
+              final local =
+                  (position -
+                          VideoPreviewPosition.startOf(_document, _selected))
+                      .clamp(0, clip.duration);
+              final fadeTime = math.min(.4, clip.duration / 3);
+              final opacity = clip.effect == VideoEffect.fade
+                  ? math
+                        .min(
+                          local / fadeTime,
+                          (clip.duration - local) / fadeTime,
+                        )
+                        .clamp(0, 1)
+                        .toDouble()
+                  : 1.0;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
                   Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: RadialGradient(
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: .5),
-                            ],
-                            stops: const [.35, 1.0],
-                            radius: .8,
-                          ),
-                        ),
+                    child: GestureDetector(
+                      key: const ValueKey('video-drag-clip'),
+                      dragStartBehavior: DragStartBehavior.down,
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _selectCanvasTarget('clip'),
+                      onScaleStart: (details) =>
+                          _startCanvasGesture('clip', details, frame),
+                      onScaleUpdate: _updateCanvasGesture,
+                      onScaleEnd: (_) => _endCanvasGesture(),
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Stack(children: [videoTexture!]),
                       ),
                     ),
                   ),
-                if (overlay != null &&
-                    position >= overlay.start &&
-                    position <= overlay.end)
-                  Align(
-                    alignment: Alignment(overlay.x * 2 - 1, overlay.y * 2 - 1),
-                    child: Opacity(
-                      opacity: overlay.opacity,
-                      child: SizedBox(
-                        width: frameWidth * overlay.width,
-                        child: Image.file(
-                          File(overlay.path),
-                          gaplessPlayback: true,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) =>
-                              const Icon(Icons.broken_image_outlined),
-                        ),
-                      ),
-                    ),
-                  ),
-                for (final text in _document.texts)
-                  if (position >= text.start && position <= text.end)
-                    Align(
-                      alignment: Alignment(text.x * 2 - 1, text.y * 2 - 1),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: text.background
-                              ? Colors.black.withValues(alpha: .55)
-                              : Colors.transparent,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.all(text.background ? 4 : 0),
-                          child: Text(
-                            text.text,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: text.font,
-                              fontSize: math.max(8, frameHeight * text.size),
-                              color: Color(text.color),
+                  if (clip.effect == VideoEffect.vignette ||
+                      clip.filter == VideoFilter.cinema &&
+                          clip.filterIntensity > 0)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withValues(
+                                  alpha:
+                                      .5 *
+                                      (clip.effect == VideoEffect.vignette
+                                          ? 1
+                                          : clip.filterIntensity),
+                                ),
+                              ],
+                              stops: const [.35, 1],
+                              radius: .8,
                             ),
                           ),
                         ),
                       ),
                     ),
-              ],
-            );
-          },
+                  if (_canvasTarget == 'clip')
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: AppColors.accent.withValues(alpha: .65),
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  for (final overlay in _document.overlays)
+                    if (position >= overlay.start && position <= overlay.end)
+                      _overlayOnCanvas(overlay, frame),
+                  for (final text in _document.texts)
+                    if (position >= text.start && position <= text.end)
+                      _textOnCanvas(text, frame),
+                  if (_gestureTarget != null && _snapX)
+                    Positioned(
+                      left: frame.width / 2,
+                      top: 0,
+                      bottom: 0,
+                      child: const IgnorePointer(
+                        child: SizedBox(
+                          width: 1,
+                          child: ColoredBox(color: AppColors.accent),
+                        ),
+                      ),
+                    ),
+                  if (_gestureTarget != null && _snapY)
+                    Positioned(
+                      top: frame.height / 2,
+                      left: 0,
+                      right: 0,
+                      child: const IgnorePointer(
+                        child: SizedBox(
+                          height: 1,
+                          child: ColoredBox(color: AppColors.accent),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       );
     },
   );
+
+  GlobalKey _layerKey(String target) =>
+      _layerKeys.putIfAbsent(target, () => GlobalKey());
+
+  Future<double> _overlayRatio(String path) =>
+      _overlayRatios.putIfAbsent(path, () async {
+        ui.ImmutableBuffer? buffer;
+        ui.ImageDescriptor? descriptor;
+        try {
+          buffer = await ui.ImmutableBuffer.fromFilePath(path);
+          descriptor = await ui.ImageDescriptor.encoded(buffer);
+          return descriptor.width / descriptor.height;
+        } catch (_) {
+          return 1;
+        } finally {
+          descriptor?.dispose();
+          buffer?.dispose();
+        }
+      });
+
+  Widget _overlayOnCanvas(VideoOverlay overlay, Size frame) =>
+      FutureBuilder<double>(
+        future: _overlayRatio(overlay.path),
+        builder: (context, snapshot) {
+          final ratio = snapshot.data ?? 1;
+          final cacheWidth = math.max(
+            1,
+            (ratio >= 1 ? 1024.0 : 1024 * ratio).round(),
+          );
+          final cacheHeight = math.max(
+            1,
+            (ratio >= 1 ? 1024 / ratio : 1024.0).round(),
+          );
+          final size = Size(
+            frame.width * overlay.width,
+            frame.width * overlay.width / (snapshot.data ?? 1),
+          );
+          return _placedLayer(
+            target: 'overlay:${overlay.id}',
+            frame: frame,
+            x: overlay.x,
+            y: overlay.y,
+            centered: overlay.centered,
+            size: size,
+            child: Opacity(
+              opacity: overlay.opacity,
+              child: Image.file(
+                File(overlay.path),
+                gaplessPlayback: true,
+                fit: BoxFit.fill,
+                // This provider key stays unchanged while dragging/pinching.
+                // Both dimensions are bounded, including very tall images.
+                cacheWidth: cacheWidth,
+                cacheHeight: cacheHeight,
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.broken_image_outlined),
+              ),
+            ),
+          );
+        },
+      );
+
+  Widget _textOnCanvas(VideoText text, Size frame) {
+    final style = TextStyle(
+      fontFamily: text.font,
+      fontSize: frame.height * text.size,
+      color: Color(text.color),
+      height: 1,
+    );
+    final painter = TextPainter(
+      text: TextSpan(text: text.text, style: style),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout();
+    final padding = text.background ? frame.height * .0052 : 0.0;
+    final size = Size(
+      painter.width + padding * 2,
+      painter.height + padding * 2,
+    );
+    painter.dispose();
+    return _placedLayer(
+      target: 'text:${text.id}',
+      frame: frame,
+      x: text.x,
+      y: text.y,
+      centered: text.centered,
+      size: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: text.background
+              ? Colors.black.withValues(alpha: .55)
+              : Colors.transparent,
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(padding),
+          child: Text(
+            text.text,
+            textAlign: TextAlign.center,
+            textScaler: TextScaler.noScaling,
+            style: style,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placedLayer({
+    required String target,
+    required Size frame,
+    required double x,
+    required double y,
+    required bool centered,
+    required Size size,
+    required Widget child,
+  }) {
+    final selected = target == _canvasTarget;
+    return Positioned(
+      left: centered
+          ? frame.width * x - size.width / 2
+          : (frame.width - size.width) * x,
+      top: centered
+          ? frame.height * y - size.height / 2
+          : (frame.height - size.height) * y,
+      width: size.width,
+      height: size.height,
+      child: Semantics(
+        key: ValueKey('video-layer-$target'),
+        label: target.startsWith('text:')
+            ? 'Drag text; pinch to resize'
+            : 'Drag image; pinch to resize',
+        selected: selected,
+        child: GestureDetector(
+          key: _layerKey(target),
+          dragStartBehavior: DragStartBehavior.down,
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _selectCanvasTarget(target),
+          onDoubleTap: target.startsWith('text:')
+              ? () => _editText(
+                  _document.texts.firstWhere(
+                    (text) => 'text:${text.id}' == target,
+                  ),
+                )
+              : null,
+          onScaleStart: (details) =>
+              _startCanvasGesture(target, details, frame),
+          onScaleUpdate: _updateCanvasGesture,
+          onScaleEnd: (_) => _endCanvasGesture(),
+          child: Stack(
+            clipBehavior: Clip.none,
+            fit: StackFit.expand,
+            children: [
+              child,
+              if (selected)
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.accent, width: 1.5),
+                    ),
+                  ),
+                ),
+              if (selected)
+                Positioned(
+                  right: -7,
+                  bottom: -7,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: const BoxDecoration(
+                        color: AppColors.accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.open_in_full_rounded,
+                        color: Colors.black,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _selectCanvasTarget(String target, {bool openPanel = true}) {
+    setState(() {
+      _canvasTarget = target;
+      _tool = target == 'clip'
+          ? 'Canvas'
+          : target.startsWith('text:')
+          ? 'Text'
+          : 'Overlay';
+      if (openPanel) _panelOpen = true;
+    });
+  }
+
+  void _startCanvasGesture(
+    String target,
+    ScaleStartDetails details,
+    Size frame,
+  ) {
+    if (_exporting || _processingCutout || _composedPreview) return;
+    _selectCanvasTarget(target, openPanel: false);
+    _gestureTarget = target;
+    final origins = _canvasPointerOrigins.values.toList();
+    _gestureFocal = origins.isEmpty
+        ? details.focalPoint
+        : origins.reduce((a, b) => a + b) / origins.length.toDouble();
+    final canvasBox =
+        _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    _gestureCanvasFocal =
+        canvasBox?.globalToLocal(_gestureFocal) ??
+        Offset(frame.width / 2, frame.height / 2);
+    _gestureFrame = frame;
+    _gestureClip = target == 'clip' ? _clip : null;
+    _gestureOverlay = _document.overlays
+        .where((layer) => 'overlay:${layer.id}' == target)
+        .firstOrNull;
+    _gestureText = _document.texts
+        .where((text) => 'text:${text.id}' == target)
+        .firstOrNull;
+    if (_gestureClip case final clip?) {
+      final placement = VideoCanvasPlacement.forClip(
+        clip,
+        canvasWidth: frame.width,
+        canvasHeight: frame.height,
+        sourceWidth: _player?.value.size.width,
+        sourceHeight: _player?.value.size.height,
+      );
+      _gestureCenter = Offset(
+        placement.left + placement.width / 2,
+        placement.top + placement.height / 2,
+      );
+    } else {
+      final layerSize =
+          _layerKeys[target]?.currentContext?.size ?? const Size(40, 40);
+      final x = _gestureOverlay?.x ?? _gestureText?.x ?? .5;
+      final y = _gestureOverlay?.y ?? _gestureText?.y ?? .5;
+      final centered =
+          _gestureOverlay?.centered ?? _gestureText?.centered ?? true;
+      _gestureCenter = centered
+          ? Offset(frame.width * x, frame.height * y)
+          : Offset(
+              (frame.width - layerSize.width) * x + layerSize.width / 2,
+              (frame.height - layerSize.height) * y + layerSize.height / 2,
+            );
+    }
+    if (!_gestureSessionActive) _gestureChanged = false;
+    _gestureSessionActive = true;
+    _snapX = false;
+    _snapY = false;
+    _wantsPlayback = false;
+    unawaited(_player?.pause());
+    // Flutter accepts a scale after touch slop. Apply the full movement from
+    // pointer down in that first frame, rather than dropping those pixels.
+    _updateCanvasGesture(ScaleUpdateDetails(focalPoint: details.focalPoint));
+  }
+
+  void _updateCanvasGesture(ScaleUpdateDetails details) {
+    if (_gestureTarget == null) return;
+    final frame = _gestureFrame;
+    final scale = details.scale;
+    var center =
+        _gestureCenter +
+        (details.focalPoint - _gestureFocal) +
+        (_gestureCenter - _gestureCanvasFocal) * (scale - 1);
+    _snapX = (center.dx - frame.width / 2).abs() <= 5;
+    _snapY = (center.dy - frame.height / 2).abs() <= 5;
+    center = Offset(
+      _snapX ? frame.width / 2 : center.dx,
+      _snapY ? frame.height / 2 : center.dy,
+    );
+    if (_gestureClip case final initial?) {
+      final zoom = (initial.zoom * scale).clamp(.1, 4).toDouble();
+      final base = VideoCanvasPlacement.forClip(
+        initial.copyWith(zoom: zoom, positionX: 0, positionY: 0),
+        canvasWidth: frame.width,
+        canvasHeight: frame.height,
+        sourceWidth: _player?.value.size.width,
+        sourceHeight: _player?.value.size.height,
+      );
+      _editClip(
+        initial.copyWith(
+          zoom: zoom,
+          positionX: ((center.dx - base.left - base.width / 2) / frame.width)
+              .clamp(-2, 2),
+          positionY: ((center.dy - base.top - base.height / 2) / frame.height)
+              .clamp(-2, 2),
+        ),
+        commit: false,
+      );
+    } else if (_gestureOverlay case final initial?) {
+      _replaceOverlay(
+        initial.copyWith(
+          centered: true,
+          x: (center.dx / frame.width).clamp(-.5, 1.5),
+          y: (center.dy / frame.height).clamp(-.5, 1.5),
+          width: (initial.width * scale).clamp(.03, 2),
+        ),
+        commit: false,
+      );
+    } else if (_gestureText case final initial?) {
+      _replaceText(
+        initial.copyWith(
+          centered: true,
+          x: (center.dx / frame.width).clamp(-.5, 1.5),
+          y: (center.dy / frame.height).clamp(-.5, 1.5),
+          size: (initial.size * scale).clamp(.02, .5),
+        ),
+        commit: false,
+      );
+    }
+    _gestureChanged = true;
+  }
+
+  void _releaseCanvasPointer(int pointer) {
+    _canvasPointerOrigins.remove(pointer);
+    _canvasPointerPositions.remove(pointer);
+    if (_gestureSessionActive && _canvasPointerPositions.isNotEmpty) {
+      // The next scale segment begins from the current recipe and fingers.
+      _canvasPointerOrigins.addAll(_canvasPointerPositions);
+    }
+    if (_canvasPointerPositions.isEmpty) {
+      scheduleMicrotask(() {
+        if (mounted && _gestureSessionActive) _finishCanvasSession();
+      });
+    }
+  }
+
+  void _endCanvasGesture() {
+    if (_gestureTarget == null) return;
+    if (_canvasPointerPositions.isEmpty) {
+      _finishCanvasSession();
+    } else {
+      // Continue the same history gesture if a pinch becomes a one-finger drag.
+      _canvasPointerOrigins.addAll(_canvasPointerPositions);
+      setState(() {
+        _gestureTarget = null;
+        _snapX = false;
+        _snapY = false;
+      });
+    }
+  }
+
+  void _finishCanvasSession() {
+    if (!_gestureSessionActive) return;
+    _gestureSessionActive = false;
+    if (_gestureChanged) _commitGesture();
+    setState(() {
+      _gestureTarget = null;
+      _snapX = false;
+      _snapY = false;
+    });
+  }
+
+  void _replaceOverlay(VideoOverlay overlay, {bool commit = true}) => _change(
+    _document.copyWith(
+      overlays: _document.overlays
+          .map((layer) => layer.id == overlay.id ? overlay : layer)
+          .toList(),
+    ),
+    commit: commit,
+  );
+
+  void _replaceText(VideoText text, {bool commit = true}) => _change(
+    _document.copyWith(
+      texts: _document.texts
+          .map((layer) => layer.id == text.id ? text : layer)
+          .toList(),
+    ),
+    commit: commit,
+  );
+
+  Widget _placementControls(String target) => Wrap(
+    spacing: 2,
+    children: [
+      IconButton(
+        tooltip: 'Move selected layer left',
+        onPressed: () => _nudgeTarget(target, const Offset(-.01, 0)),
+        icon: const Icon(Icons.arrow_left_rounded),
+      ),
+      IconButton(
+        tooltip: 'Move selected layer up',
+        onPressed: () => _nudgeTarget(target, const Offset(0, -.01)),
+        icon: const Icon(Icons.arrow_drop_up_rounded),
+      ),
+      IconButton(
+        tooltip: 'Center selected layer',
+        onPressed: () => _nudgeTarget(target, Offset.zero, center: true),
+        icon: const Icon(Icons.center_focus_strong_rounded),
+      ),
+      IconButton(
+        tooltip: 'Move selected layer down',
+        onPressed: () => _nudgeTarget(target, const Offset(0, .01)),
+        icon: const Icon(Icons.arrow_drop_down_rounded),
+      ),
+      IconButton(
+        tooltip: 'Move selected layer right',
+        onPressed: () => _nudgeTarget(target, const Offset(.01, 0)),
+        icon: const Icon(Icons.arrow_right_rounded),
+      ),
+    ],
+  );
+
+  void _nudgeTarget(String target, Offset delta, {bool center = false}) {
+    if (target == 'clip') {
+      final clip = _clip!;
+      _editClip(
+        clip.copyWith(
+          positionX: center ? 0 : (clip.positionX + delta.dx).clamp(-2, 2),
+          positionY: center ? 0 : (clip.positionY + delta.dy).clamp(-2, 2),
+          cropX: center ? .5 : clip.cropX,
+          cropY: center ? .5 : clip.cropY,
+        ),
+      );
+      return;
+    }
+    final overlay = _document.overlays
+        .where((layer) => 'overlay:${layer.id}' == target)
+        .firstOrNull;
+    final text = _document.texts
+        .where((layer) => 'text:${layer.id}' == target)
+        .firstOrNull;
+    if (overlay == null && text == null) return;
+    final frame = _canvasKey.currentContext?.size ?? const Size(320, 180);
+    final size = _layerKeys[target]?.currentContext?.size ?? const Size(40, 40);
+    final centered = overlay?.centered ?? text!.centered;
+    var x = overlay?.x ?? text!.x;
+    var y = overlay?.y ?? text!.y;
+    if (!centered) {
+      x = ((frame.width - size.width) * x + size.width / 2) / frame.width;
+      y = ((frame.height - size.height) * y + size.height / 2) / frame.height;
+    }
+    x = center ? .5 : (x + delta.dx).clamp(-.5, 1.5);
+    y = center ? .5 : (y + delta.dy).clamp(-.5, 1.5);
+    if (overlay != null) {
+      _replaceOverlay(overlay.copyWith(x: x, y: y, centered: true));
+    }
+    if (text != null) _replaceText(text.copyWith(x: x, y: y, centered: true));
+  }
 
   Widget _badge(String text) => DecoratedBox(
     decoration: BoxDecoration(
@@ -1626,7 +2178,16 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           button: true,
           label: tool.$1,
           child: InkWell(
-            onTap: () => setState(() => _tool = tool.$1),
+            onTap: () => setState(() {
+              _panelOpen = true;
+              _tool = tool.$1;
+              if (_tool == 'Canvas' || _tool == 'Cutout') {
+                _canvasTarget = 'clip';
+              }
+              if (_tool == 'Overlay' && _activeOverlay != null) {
+                _canvasTarget = 'overlay:${_activeOverlay!.id}';
+              }
+            }),
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
               width: 69,
@@ -1684,9 +2245,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '${_selected + 1}/${_document.clips.length}',
-                style: const TextStyle(fontSize: 11),
+              IconButton(
+                tooltip: 'Done with tool',
+                onPressed: () => setState(() => _panelOpen = false),
+                icon: const Icon(
+                  Icons.check_rounded,
+                  color: AppColors.accent,
+                  size: 20,
+                ),
               ),
             ],
           ),
@@ -1694,6 +2260,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           ...switch (_tool) {
             'Trim' => _trimTools(clip),
             'Canvas' => _canvasTools(clip),
+            'Cutout' => _cutoutTools(clip),
             'Speed' => _speedTools(clip),
             'Audio' => _audioTools(clip),
             'Text' => _textTools(),
@@ -1844,32 +2411,112 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           )
           .toList(),
     ),
-    _slider(
-      'Zoom • ${clip.zoom.toStringAsFixed(2)}×',
-      clip.zoom,
-      1,
-      3,
-      (v) => _editClip(clip.copyWith(zoom: v), commit: false),
+    Wrap(
+      spacing: 8,
+      children: [
+        for (final fit in VideoFit.values)
+          ChoiceChip(
+            key: ValueKey('video-fit-${fit.name}'),
+            label: Text(fit == VideoFit.fill ? 'Fill' : 'Fit'),
+            selected: clip.fit == fit,
+            onSelected: (_) => _editClip(
+              clip.copyWith(
+                fit: fit,
+                zoom: 1,
+                positionX: 0,
+                positionY: 0,
+                cropX: .5,
+                cropY: .5,
+              ),
+            ),
+          ),
+        TextButton.icon(
+          onPressed: () => _editClip(
+            clip.copyWith(
+              zoom: 1,
+              positionX: 0,
+              positionY: 0,
+              cropX: .5,
+              cropY: .5,
+            ),
+          ),
+          icon: const Icon(Icons.restart_alt_rounded, size: 18),
+          label: const Text('Reset'),
+        ),
+      ],
     ),
-    _slider(
-      'Crop horizontal',
-      clip.cropX,
-      0,
-      1,
-      (v) => _editClip(clip.copyWith(cropX: v), commit: false),
-    ),
-    _slider(
-      'Crop vertical',
-      clip.cropY,
-      0,
-      1,
-      (v) => _editClip(clip.copyWith(cropY: v), commit: false),
-    ),
+    _placementControls('clip'),
     const Text(
-      'The frame fills the chosen canvas. Use position and zoom to keep your subject in view.',
-      style: TextStyle(fontSize: 11),
+      'Drag the video to position it. Pinch to resize. Cyan guides snap to the canvas center.',
+      style: TextStyle(fontSize: 11, color: AppColors.muted),
     ),
   ];
+
+  List<Widget> _cutoutTools(VideoClip clip) => [
+    FilledButton.icon(
+      onPressed: widget.removeVideoBackground == null || _processingCutout
+          ? null
+          : _cutoutVideo,
+      icon: const Icon(Icons.person_outline_rounded),
+      label: Text(
+        _processingCutout ? 'Processing on device…' : 'Auto & manual cutout',
+      ),
+    ),
+    const Padding(
+      padding: EdgeInsets.only(top: 8),
+      child: Text(
+        'Choose auto removal, brush cleanup and a replacement background. Applies to this trimmed clip offline; processing has progress and cancel.',
+        style: TextStyle(fontSize: 11, color: AppColors.muted),
+      ),
+    ),
+    if (clip.cutoutOriginal != null)
+      TextButton.icon(
+        onPressed: () {
+          final original = clip.cutoutOriginal!;
+          _editClip(
+            clip.copyWith(
+              path: original.path,
+              start: original.start,
+              end: original.end,
+              sourceDuration: original.sourceDuration,
+              width: original.width,
+              height: original.height,
+              hasAudio: original.hasAudio,
+              clearCutoutOriginal: true,
+            ),
+          );
+        },
+        icon: const Icon(Icons.restart_alt_rounded),
+        label: const Text('Restore original video'),
+      ),
+  ];
+
+  Future<void> _cutoutVideo() async {
+    final clip = _clip;
+    if (clip == null ||
+        widget.removeVideoBackground == null ||
+        _processingCutout) {
+      return;
+    }
+    setState(() => _processingCutout = true);
+    _wantsPlayback = false;
+    unawaited(_player?.pause());
+    try {
+      final result = await widget.removeVideoBackground!(clip);
+      if (result != null && mounted) {
+        final index = _document.clips.indexWhere((item) => item.id == clip.id);
+        if (index >= 0) {
+          final clips = [..._document.clips];
+          clips[index] = result;
+          _change(_document.copyWith(clips: clips));
+        }
+      }
+    } catch (error) {
+      _message('Video cutout could not be completed. $error');
+    } finally {
+      if (mounted) setState(() => _processingCutout = false);
+    }
+  }
 
   List<Widget> _speedTools(VideoClip clip) => [
     _slider(
@@ -2014,27 +2661,64 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
   ];
 
   List<Widget> _filterTools(VideoClip clip) => [
-    const Text('Color the selected clip', style: TextStyle(fontSize: 12)),
-    const SizedBox(height: 10),
-    Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: VideoFilter.values
+    FilterStrip<VideoFilter>(
+      options: VideoFilter.values
           .map(
-            (filter) => ChoiceChip(
-              label: Text(_label(filter.name)),
-              selected: clip.filter == filter,
-              onSelected: (_) async {
-                if (mounted) _editClip(_clip!.copyWith(filter: filter));
+            (filter) => FilterOption(
+              value: filter,
+              label: _label(filter.name),
+              group: switch (filter) {
+                VideoFilter.original => 'All',
+                VideoFilter.mono => 'Classic',
+                VideoFilter.cinema => 'Film',
+                _ => 'Color',
               },
             ),
           )
           .toList(),
+      selected: clip.filter,
+      onSelected: (filter) => _editClip(_clip!.copyWith(filter: filter)),
+      previewBuilder: (filter) => FutureBuilder<String?>(
+        future: _thumbnail(clip, 1),
+        builder: (context, snapshot) => ColorFiltered(
+          colorFilter: ColorFilter.matrix(
+            VideoPreviewColor.matrix(
+              clip.copyWith(
+                filter: filter,
+                filterIntensity: 1,
+                brightness: 0,
+                contrast: 1,
+                saturation: 1,
+                exposure: 0,
+              ),
+            ),
+          ),
+          child: snapshot.data == null
+              ? const ColoredBox(
+                  color: AppColors.surfaceRaised,
+                  child: Center(
+                    child: Icon(Icons.movie_outlined, color: AppColors.muted),
+                  ),
+                )
+              : Image.file(
+                  File(snapshot.data!),
+                  fit: BoxFit.cover,
+                  cacheWidth: 160,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.broken_image_outlined),
+                ),
+        ),
+      ),
+      enabled: !_exporting && !_processingCutout,
+      strengthEnabled: clip.filter != VideoFilter.original,
+      intensity: clip.filterIntensity,
+      onIntensityChanged: (value) =>
+          _editClip(_clip!.copyWith(filterIntensity: value), commit: false),
+      onIntensityChangeEnd: _commitGesture,
     ),
-    const SizedBox(height: 12),
     const Text(
-      'Color changes are live. Use composition preview to check the final look.',
-      style: TextStyle(fontSize: 11),
+      'Tap a look, then adjust strength. Filters work offline with no downloads or account.',
+      style: TextStyle(fontSize: 11, color: AppColors.muted),
     ),
   ];
 
@@ -2145,6 +2829,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           style: TextStyle(fontSize: 12),
         ),
       ),
+    const Text(
+      'Tap text on the canvas to select it. Drag to move; pinch to resize; double-tap to edit.',
+      style: TextStyle(fontSize: 11, color: AppColors.muted),
+    ),
+    if (_canvasTarget.startsWith('text:')) _placementControls(_canvasTarget),
   ];
 
   Future<void> _editText([VideoText? existing]) async {
@@ -2162,7 +2851,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       builder: (_) => _TextEditor(
         text:
             existing ??
-            VideoText(id: _id(), text: 'Your story', end: _document.duration),
+            VideoText(
+              id: _id(),
+              text: 'Your story',
+              end: _document.duration,
+              x: .5,
+              y: .5,
+              centered: true,
+            ),
         duration: _document.duration,
         colors: _colors,
       ),
@@ -2176,10 +2872,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
       texts[index] = result;
     }
     _change(_document.copyWith(texts: texts));
+    setState(() => _canvasTarget = 'text:${result.id}');
   }
 
   List<Widget> _overlayTools() {
-    final overlay = _document.overlay;
+    final overlay = _activeOverlay;
     return [
       Row(
         children: [
@@ -2187,21 +2884,42 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
             child: OutlinedButton.icon(
               onPressed: _pickOverlay,
               icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: Text(
-                overlay == null ? 'Add image overlay' : 'Replace image',
-              ),
+              label: const Text('Add image overlay'),
             ),
           ),
           if (overlay != null)
             IconButton(
               tooltip: 'Remove overlay',
-              onPressed: () => _change(_document.copyWith(removeOverlay: true)),
+              onPressed: () => _change(
+                _document.copyWith(
+                  overlays: _document.overlays
+                      .where((layer) => layer.id != overlay.id)
+                      .toList(),
+                ),
+              ),
               icon: const Icon(Icons.delete_outline_rounded),
             ),
         ],
       ),
+      if (_document.overlays.length > 1)
+        Wrap(
+          spacing: 6,
+          children: [
+            for (var i = 0; i < _document.overlays.length; i++)
+              ChoiceChip(
+                label: Text('Image ${i + 1}'),
+                selected: _document.overlays[i].id == overlay?.id,
+                onSelected: (_) =>
+                    _selectCanvasTarget('overlay:${_document.overlays[i].id}'),
+              ),
+          ],
+        ),
       if (overlay != null) ...[
-        _slider('Size', overlay.width, .05, 1, (v) => _updateOverlay(width: v)),
+        const Text(
+          'Drag the selected image to move it. Pinch to resize.',
+          style: TextStyle(fontSize: 11, color: AppColors.muted),
+        ),
+        _placementControls('overlay:${overlay.id}'),
         _slider(
           'Opacity',
           overlay.opacity,
@@ -2209,20 +2927,30 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
           1,
           (v) => _updateOverlay(opacity: v),
         ),
-        _slider(
-          'Horizontal position',
-          overlay.x,
-          0,
-          1,
-          (v) => _updateOverlay(x: v),
-        ),
-        _slider(
-          'Vertical position',
-          overlay.y,
-          0,
-          1,
-          (v) => _updateOverlay(y: v),
-        ),
+        if (overlay.originalPath != null)
+          TextButton.icon(
+            onPressed: () => _replaceOverlay(
+              VideoOverlay(
+                id: overlay.id,
+                path: overlay.originalPath!,
+                x: overlay.x,
+                y: overlay.y,
+                width: overlay.width,
+                opacity: overlay.opacity,
+                start: overlay.start,
+                end: overlay.end,
+                centered: overlay.centered,
+              ),
+            ),
+            icon: const Icon(Icons.restart_alt_rounded),
+            label: const Text('Restore original image'),
+          ),
+        if (widget.refineImageBackground != null)
+          TextButton.icon(
+            onPressed: _processingCutout ? null : () => _cutoutOverlay(overlay),
+            icon: const Icon(Icons.person_outline_rounded),
+            label: const Text('Auto & manual image cutout'),
+          ),
         Text(
           'Visible ${_time(overlay.start)} – ${_time(math.min(overlay.end, _document.duration))}',
           style: const TextStyle(fontSize: 12),
@@ -2241,36 +2969,59 @@ class _VideoEditorScreenState extends State<VideoEditorScreen>
         const Padding(
           padding: EdgeInsets.only(top: 12),
           child: Text(
-            'Layer a logo, sticker or photo. Transparent PNG images keep their transparency.',
+            'Layer logos, stickers and photos. Transparent PNG images keep their transparency.',
             style: TextStyle(fontSize: 12),
           ),
         ),
     ];
   }
 
-  void _updateOverlay({
-    double? width,
-    double? opacity,
-    double? x,
-    double? y,
-    double? start,
-    double? end,
-  }) {
-    final overlay = _document.overlay!;
-    _change(
-      _document.copyWith(
-        overlay: VideoOverlay(
-          path: overlay.path,
-          width: width ?? overlay.width,
-          opacity: opacity ?? overlay.opacity,
-          x: x ?? overlay.x,
-          y: y ?? overlay.y,
-          start: start ?? overlay.start,
-          end: end ?? overlay.end,
-        ),
-      ),
-      commit: false,
-    );
+  Future<void> _cutoutOverlay(VideoOverlay overlay) async {
+    if (widget.refineImageBackground == null || _processingCutout) return;
+    setState(() => _processingCutout = true);
+    _wantsPlayback = false;
+    unawaited(_player?.pause());
+    try {
+      final path = await widget.refineImageBackground!(
+        overlay.originalPath ?? overlay.path,
+        overlay.originalPath == null ? null : overlay.path,
+      );
+      if (path != null &&
+          mounted &&
+          _document.overlays.any((layer) => layer.id == overlay.id)) {
+        final current = _document.overlays.firstWhere(
+          (layer) => layer.id == overlay.id,
+        );
+        _replaceOverlay(
+          VideoOverlay(
+            id: current.id,
+            originalPath: current.originalPath ?? current.path,
+            path: path,
+            x: current.x,
+            y: current.y,
+            width: current.width,
+            opacity: current.opacity,
+            start: current.start,
+            end: current.end,
+            centered: current.centered,
+          ),
+        );
+      }
+    } catch (error) {
+      _message('Image cutout could not be completed. $error');
+    } finally {
+      if (mounted) setState(() => _processingCutout = false);
+    }
+  }
+
+  void _updateOverlay({double? opacity, double? start, double? end}) {
+    final overlay = _activeOverlay;
+    if (overlay != null) {
+      _replaceOverlay(
+        overlay.copyWith(opacity: opacity, start: start, end: end),
+        commit: false,
+      );
+    }
   }
 
   Widget _slider(
@@ -2415,6 +3166,7 @@ class _TextEditorState extends State<_TextEditor> {
                         color: _color,
                         font: _font,
                         background: _background,
+                        centered: widget.text.centered,
                         start: _start,
                         end: _end,
                       ),
@@ -2496,9 +3248,11 @@ class _TextEditorState extends State<_TextEditor> {
                         .toList(),
                   ),
                   const SizedBox(height: 12),
-                  _slider('Font size', _size, .02, .25, (v) => _size = v),
-                  _slider('Horizontal position', _x, 0, 1, (v) => _x = v),
-                  _slider('Vertical position', _y, 0, 1, (v) => _y = v),
+                  _slider('Font size', _size, .02, .5, (v) => _size = v),
+                  const Text(
+                    'Place text by dragging on the canvas after saving.',
+                    style: TextStyle(fontSize: 12, color: AppColors.muted),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Caption background'),

@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
 import 'package:flutter/material.dart';
@@ -79,6 +81,31 @@ class _NoAutomaticRender implements VideoRenderer {
   Future<void> dispose() async {}
 }
 
+Future<void> captureEditor(WidgetTester tester, String name) async {
+  final support = await getApplicationSupportDirectory();
+  final directory = await Directory(
+    '${support.path}/canvas_qa',
+  ).create(recursive: true);
+  await tester.pump();
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byType(RepaintBoundary).first,
+  );
+  final image = await boundary.toImage(pixelRatio: 1.5);
+  try {
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    await File(
+      '${directory.path}/$name.png',
+    ).writeAsBytes(bytes!.buffer.asUint8List());
+    await const NativeMediaService().publish(
+      '${directory.path}/$name.png',
+      'v12-$name.png',
+      video: false,
+    );
+  } finally {
+    image.dispose();
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('photo brightness and size repaint immediately on cached texture', (
@@ -89,7 +116,19 @@ void main() {
     final fixture = img.Image(width: 1600, height: 1000);
     img.fill(fixture, color: img.ColorRgb8(90, 100, 110));
     await file.writeAsBytes(img.encodePng(fixture));
-    final document = PhotoDocument(imagePath: file.path);
+    final document = PhotoDocument(
+      imagePath: file.path,
+      layers: [
+        PhotoLayer(
+          id: 'drag-layer',
+          kind: 'circle',
+          x: .1,
+          y: .1,
+          width: .4,
+          height: .4,
+        ),
+      ],
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.dark,
@@ -134,10 +173,41 @@ void main() {
     expect(painter().document.width, 1080);
     expect(painter().document.height, 1920);
     expect(identical(painter().composition?.foreground, source), true);
+    final dragCanvas = find.byKey(const ValueKey('photo-live-preview'));
+    final canvasRect = tester.getRect(dragCanvas);
+    final dragBase = await tester.startGesture(
+      canvasRect.topLeft +
+          Offset(canvasRect.width * .75, canvasRect.height * .8),
+    );
+    for (var i = 0; i < 8; i++) {
+      await dragBase.moveBy(const Offset(4, 2));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(identical(painter().composition?.foreground, source), true);
+    }
+    await dragBase.up();
+    await tester.pump();
+    expect(painter().document.imageX, greaterThan(0));
+    final current = tester.getRect(dragCanvas);
+    final dragLayer = await tester.startGesture(
+      current.topLeft + Offset(current.width * .3, current.height * .3),
+    );
+    for (var i = 0; i < 8; i++) {
+      await dragLayer.moveBy(const Offset(3, 1));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(identical(painter().composition?.foreground, source), true);
+    }
+    await dragLayer.up();
+    await tester.pump();
+    expect(painter().document.layers.single.x, greaterThan(.1));
+    await tester.tap(find.byTooltip('Undo'));
+    await tester.pump();
+    expect(painter().document.layers.single.x, closeTo(.1, .0001));
+    expect(painter().document.imageX, greaterThan(0));
     expect(tester.takeException(), isNull);
     debugPrint(
       'Realtime photo: 8 gesture frames reuse the native image; layout updates next frame.',
     );
+    await captureEditor(tester, 'photo-canvas');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
@@ -249,6 +319,38 @@ void main() {
         true,
       );
       expect(renderer.renders, 0);
+      final placedBefore = tester.widget<Positioned>(
+        find.byKey(const ValueKey('video-live-crop')),
+      );
+      final dragClip = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('video-drag-clip'))),
+      );
+      for (var i = 0; i < 8; i++) {
+        await dragClip.moveBy(const Offset(4, 2));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          identical(
+            tester.widget<VideoPlayer>(find.byType(VideoPlayer)).controller,
+            controller,
+          ),
+          true,
+        );
+        expect(renderer.renders, 0);
+      }
+      await dragClip.up();
+      await tester.pump();
+      final placedAfter = tester.widget<Positioned>(
+        find.byKey(const ValueKey('video-live-crop')),
+      );
+      expect(placedAfter.left, greaterThan(placedBefore.left!));
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<Positioned>(find.byKey(const ValueKey('video-live-crop')))
+            .left,
+        closeTo(placedBefore.left!, .1),
+      );
       final scrubber = find.byKey(const ValueKey('video-timeline-scrubber'));
       await tester.drag(scrubber, const Offset(65, 0));
       await tester.pump(const Duration(milliseconds: 500));
@@ -258,6 +360,7 @@ void main() {
       debugPrint(
         'Realtime video: original native player retained through 8 drag frames and scrub; 0 encode jobs.',
       );
+      await captureEditor(tester, 'video-canvas');
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     },

@@ -327,7 +327,54 @@ List<double> photoColorMatrix(PhotoDocument document) {
     default:
       look = _identity;
   }
-  return _multiply(look, base);
+  final amount = document.filterIntensity.clamp(0.0, 1.0);
+  final blended = List<double>.generate(
+    20,
+    (i) => _identity[i] + (look[i] - _identity[i]) * amount,
+  );
+  return _multiply(blended, base);
+}
+
+const photoBaseSelectionId = '__base_photo__';
+
+Rect photoLayerRect(PhotoLayer layer, Size size) => Rect.fromLTWH(
+  layer.x * size.width,
+  layer.y * size.height,
+  layer.width * size.width,
+  layer.height * size.height,
+);
+
+/// The visible fitted image is the same in hit testing, preview and export.
+Rect photoImageRect(PhotoDocument document, ui.Image? image, Size size) {
+  if (image == null) return Offset.zero & size;
+  final geometry = PhotoImageGeometry(image.width, image.height, document);
+  final fitted = applyBoxFit(
+    document.imageFit == 'contain' ? BoxFit.contain : BoxFit.cover,
+    geometry.crop.size,
+    size,
+  );
+  return Alignment.center.inscribe(fitted.destination, Offset.zero & size);
+}
+
+Offset photoRotatePoint(Offset point, Offset center, double angle) {
+  final delta = point - center;
+  return center +
+      Offset(
+        delta.dx * math.cos(angle) - delta.dy * math.sin(angle),
+        delta.dx * math.sin(angle) + delta.dy * math.cos(angle),
+      );
+}
+
+bool photoLayerContains(
+  PhotoLayer layer,
+  Size size,
+  Offset point, {
+  double tolerance = 12,
+}) {
+  final rect = photoLayerRect(layer, size);
+  return rect
+      .inflate(tolerance)
+      .contains(photoRotatePoint(point, rect.center, -layer.rotation));
 }
 
 class PhotoPainter extends CustomPainter {
@@ -336,11 +383,15 @@ class PhotoPainter extends CustomPainter {
     required this.document,
     this.selectedId,
     this.showGrid = false,
+    this.snapHorizontal = false,
+    this.snapVertical = false,
   });
   final PhotoComposition? composition;
   final PhotoDocument document;
   final String? selectedId;
   final bool showGrid;
+  final bool snapHorizontal;
+  final bool snapVertical;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -356,12 +407,7 @@ class PhotoPainter extends CustomPainter {
       _drawForeground(canvas, composition!.foreground!, size);
     }
     for (final layer in document.layers) {
-      final rect = Rect.fromLTWH(
-        layer.x * size.width,
-        layer.y * size.height,
-        layer.width * size.width,
-        layer.height * size.height,
-      );
+      final rect = photoLayerRect(layer, size);
       canvas.save();
       canvas.translate(rect.center.dx, rect.center.dy);
       canvas.rotate(layer.rotation);
@@ -441,13 +487,7 @@ class PhotoPainter extends CustomPainter {
           );
       }
       if (selectedId == layer.id) {
-        canvas.drawRect(
-          rect.inflate(3),
-          Paint()
-            ..color = const Color(0xff40e0d0)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2,
-        );
+        _selection(canvas, rect);
       }
       canvas.restore();
     }
@@ -468,7 +508,51 @@ class PhotoPainter extends CustomPainter {
         );
       }
     }
+    if (snapVertical || snapHorizontal) {
+      final paint = Paint()
+        ..color = const Color(0xff40e0d0)
+        ..strokeWidth = 1;
+      if (snapVertical) {
+        canvas.drawLine(
+          Offset(size.width / 2, 0),
+          Offset(size.width / 2, size.height),
+          paint,
+        );
+      }
+      if (snapHorizontal) {
+        canvas.drawLine(
+          Offset(0, size.height / 2),
+          Offset(size.width, size.height / 2),
+          paint,
+        );
+      }
+    }
     canvas.restore();
+  }
+
+  void _selection(Canvas canvas, Rect rect) {
+    final border = Paint()
+      ..color = const Color(0xff40e0d0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRect(rect, border);
+    final handle = Paint()..color = Colors.white;
+    for (final point in [rect.topLeft, rect.topRight, rect.bottomLeft]) {
+      canvas.drawCircle(point, 3, handle);
+    }
+    canvas.drawCircle(
+      rect.bottomRight,
+      9,
+      Paint()..color = const Color(0xff40e0d0),
+    );
+    canvas.drawCircle(
+      rect.bottomRight,
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
   }
 
   // Geometry and effects are applied to the cached texture in the raster
@@ -482,6 +566,15 @@ class PhotoPainter extends CustomPainter {
       fitted.destination,
       Offset.zero & size,
     );
+    canvas.save();
+    final center = Offset(size.width / 2, size.height / 2);
+    canvas.translate(
+      center.dx + document.imageX * size.width,
+      center.dy + document.imageY * size.height,
+    );
+    canvas.rotate(document.imageRotation);
+    canvas.scale(document.imageScale);
+    canvas.translate(-center.dx, -center.dy);
     canvas.save();
     canvas.clipRect(destination);
     canvas.translate(destination.left, destination.top);
@@ -518,6 +611,8 @@ class PhotoPainter extends CustomPainter {
     }
     canvas.drawImage(image, Offset.zero, paint);
     if (document.blur > 0) canvas.restore();
+    canvas.restore();
+    if (selectedId == photoBaseSelectionId) _selection(canvas, destination);
     canvas.restore();
   }
 

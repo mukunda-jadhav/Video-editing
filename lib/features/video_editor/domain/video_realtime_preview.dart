@@ -206,6 +206,11 @@ abstract final class VideoPreviewColor {
           0,
         ], saturation(.78));
     }
+    final strength = clip.filterIntensity;
+    color = List<double>.generate(
+      20,
+      (i) => identity[i] + (color[i] - identity[i]) * strength,
+    );
     final exposure = math.pow(2, clip.exposure).toDouble();
     final gain = clip.contrast * exposure;
     final offset = 128 * (1 - clip.contrast) * exposure + clip.brightness * 255;
@@ -232,5 +237,44 @@ abstract final class VideoPreviewColor {
       0.0,
     ];
     return multiply(adjustment, multiply(saturation(clip.saturation), color));
+  }
+}
+
+/// The single placement calculation used by canvas gestures and export.
+/// Source cropping remains anchored like legacy recipes; translation is in
+/// canvas coordinates, so resizing the preview cannot change the placement.
+class VideoCanvasPlacement {
+  const VideoCanvasPlacement(this.left, this.top, this.width, this.height);
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+
+  factory VideoCanvasPlacement.forClip(
+    VideoClip clip, {
+    required double canvasWidth,
+    required double canvasHeight,
+    double? sourceWidth,
+    double? sourceHeight,
+  }) {
+    final sw = sourceWidth ?? clip.width.toDouble();
+    final sh = sourceHeight ?? clip.height.toDouble();
+    final scale =
+        (clip.fit == VideoFit.fill
+            ? math.max(canvasWidth / sw, canvasHeight / sh)
+            : math.min(canvasWidth / sw, canvasHeight / sh)) *
+        clip.zoom;
+    final width = sw * scale;
+    final height = sh * scale;
+    return VideoCanvasPlacement(
+      (canvasWidth - width) *
+              (clip.effect == VideoEffect.mirror
+                  ? 1 - clip.cropX
+                  : clip.cropX) +
+          canvasWidth * clip.positionX,
+      (canvasHeight - height) * clip.cropY + canvasHeight * clip.positionY,
+      width,
+      height,
+    );
   }
 }

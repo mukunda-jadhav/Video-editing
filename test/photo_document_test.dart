@@ -4,6 +4,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:framelab/features/photo_editor/domain/photo_document.dart';
 
 void main() {
+  test('old projects keep centered image and full filter strength', () {
+    final document = PhotoDocument.fromJson({'imagePath': '/source.png'});
+    expect(
+      (
+        document.imageX,
+        document.imageY,
+        document.imageScale,
+        document.imageRotation,
+      ),
+      (0, 0, 1, 0),
+    );
+    expect(document.filterIntensity, 1);
+    document.imageX = .2;
+    document.imageY = -.1;
+    document.imageScale = .7;
+    document.imageRotation = math.pi / 7;
+    document.filterIntensity = .4;
+    document.originalImagePath = '/original.png';
+    document.layers.add(
+      PhotoLayer(
+        id: 'overlay',
+        kind: 'image',
+        path: '/cutout.png',
+        originalPath: '/overlay.png',
+      ),
+    );
+    expect(
+      PhotoDocument.fromJson(document.toJson()).toJson(),
+      document.toJson(),
+    );
+  });
   test('newer photo schemas are rejected before autosave can change them', () {
     expect(
       () => PhotoDocument.fromJson({'version': 99}),

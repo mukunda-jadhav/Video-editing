@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/filter_strip.dart';
+import 'background_refine_screen.dart';
 import '../data/photo_renderer.dart';
 import '../domain/photo_document.dart';
 
@@ -49,6 +51,21 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
   Timer? _saveTimer;
   Future<void>? _saveFuture;
   Size _canvasSize = Size.zero;
+  Offset? _touchStart;
+  int _touches = 0;
+  Offset _gestureFocal = Offset.zero;
+  Offset _gestureCenter = Offset.zero;
+  double _gestureWidth = 1,
+      _gestureHeight = 1,
+      _gestureAngle = 0,
+      _gestureFont = .08;
+  double _scaleOrigin = 1,
+      _rotationOrigin = 0,
+      _handleDistance = 1,
+      _handleAngle = 0;
+  int _gesturePointers = 1;
+  bool _gestureChanged = false, _dragHandle = false;
+  bool _snapHorizontal = false, _snapVertical = false;
   final FocusNode _canvasFocus = FocusNode(debugLabel: 'Photo canvas');
 
   static const _colors = [
@@ -68,6 +85,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     ('Crop', Icons.crop_rounded),
     ('Filters', Icons.filter_vintage_outlined),
     ('Text', Icons.text_fields_rounded),
+    ('Overlay', Icons.add_photo_alternate_outlined),
     ('Stickers', Icons.interests_outlined),
     ('Background', Icons.wallpaper_rounded),
     ('Layout', Icons.aspect_ratio_rounded),
@@ -229,6 +247,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
       if (path == null || !mounted) return;
       if (replaceLayer != null) {
         replaceLayer.path = path;
+        replaceLayer.originalPath = path;
       } else if (background) {
         _document.backgroundPath = path;
       } else if (overlay) {
@@ -236,6 +255,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           id: _id(),
           kind: 'image',
           path: path,
+          originalPath: path,
           x: .2,
           y: .2,
           width: .6,
@@ -243,7 +263,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         );
         _document.layers.add(layer);
         _selectedId = layer.id;
-        _tool = 'Layers';
+        _tool = 'Overlay';
       } else {
         final buffer = await ui.ImmutableBuffer.fromFilePath(path);
         ui.ImageDescriptor? descriptor;
@@ -271,6 +291,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         }
         if (!mounted) return;
         _document.imagePath = path;
+        _document.originalImagePath = path;
+        _document.imageX = _document.imageY = _document.imageRotation = 0;
+        _document.imageScale = 1;
+        _selectedId = photoBaseSelectionId;
         _document.rotation = 0;
         _document.flipHorizontal = false;
         _document.cropLeft = _document.cropTop = 0;
@@ -293,22 +317,65 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     }
   }
 
+  PhotoLayer? get _cutoutLayer => _selected?.kind == 'image' ? _selected : null;
+
   Future<void> _removeBackground() async {
-    if (_document.imagePath == null) {
+    final layer = _cutoutLayer;
+    final original = layer != null
+        ? layer.originalPath ?? layer.path
+        : _document.originalImagePath ?? _document.imagePath;
+    if (original == null) {
       _message('Import a photo first.');
       return;
     }
     await _run(() async {
-      final path = await widget.removeBackground(_document.imagePath!);
+      final path = await widget.removeBackground(original);
       if (!mounted) return;
-      _document.imagePath = path;
-      _document.backgroundColor = 0x00000000;
-      _commit();
-      _requestMedia();
+      _change(() {
+        if (layer != null) {
+          layer.originalPath = original;
+          layer.path = path;
+        } else {
+          _document.originalImagePath = original;
+          _document.imagePath = path;
+          _document.backgroundColor = 0x00000000;
+        }
+      }, media: true);
       _message(
-        'Background removed on your device. Pick a color or image to replace it.',
+        'Background removed. Use Manual erase / restore to refine the edges.',
       );
     });
+  }
+
+  Future<void> _refineBackground() async {
+    final layer = _cutoutLayer;
+    final original = layer != null
+        ? layer.originalPath ?? layer.path
+        : _document.originalImagePath ?? _document.imagePath;
+    final current = layer?.path ?? _document.imagePath;
+    if (original == null) {
+      _message('Import a photo first.');
+      return;
+    }
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => BackgroundRefineScreen(
+          originalPath: original,
+          initialMaskPath: current != original ? current : null,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    _change(() {
+      if (layer != null) {
+        layer.originalPath = original;
+        layer.path = result;
+      } else {
+        _document.originalImagePath = original;
+        _document.imagePath = result;
+        _document.backgroundColor = 0x00000000;
+      }
+    }, media: true);
   }
 
   Future<void> _export() async {
@@ -583,54 +650,47 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
                       CustomPaint(painter: _CheckerPainter()),
                       Semantics(
                         label:
-                            'Photo canvas. Select layers below to move and resize them.',
+                            'Photo canvas. Tap to select. Drag to move. Pinch to resize and rotate. Use Layers for alignment and nudge buttons.',
                         image: true,
                         child: Focus(
                           focusNode: _canvasFocus,
                           autofocus: true,
                           onKeyEvent: _canvasKey,
-                          child: GestureDetector(
-                            onTapDown: (details) =>
-                                _selectAt(details.localPosition),
-                            onPanStart: (details) =>
-                                _selectAt(details.localPosition),
-                            onPanUpdate: (details) {
-                              if (_selected == null ||
-                                  _busy ||
-                                  _canvasSize.isEmpty) {
-                                return;
+                          child: Listener(
+                            onPointerDown: (event) {
+                              if (_touches == 0) {
+                                _touchStart = event.localPosition;
                               }
-                              _change(() {
-                                _selected!.x =
-                                    (_selected!.x +
-                                            details.delta.dx /
-                                                _canvasSize.width)
-                                        .clamp(-.8, .95);
-                                _selected!.y =
-                                    (_selected!.y +
-                                            details.delta.dy /
-                                                _canvasSize.height)
-                                        .clamp(-.8, .95);
-                              }, commit: false);
+                              _touches++;
                             },
-                            onPanEnd: (_) {
-                              if (_selected != null) _commit();
-                            },
-                            onDoubleTapDown: (details) =>
-                                _selectAt(details.localPosition),
-                            onDoubleTap: () {
-                              if (_selected?.kind == 'text') {
-                                unawaited(_text(layer: _selected));
-                              }
-                            },
-                            child: RepaintBoundary(
-                              child: CustomPaint(
-                                key: const ValueKey('photo-live-preview'),
-                                painter: PhotoPainter(
-                                  composition: _composition,
-                                  document: _document,
-                                  selectedId: _selectedId,
-                                  showGrid: _tool == 'Crop',
+                            onPointerUp: (_) =>
+                                _touches = math.max(0, _touches - 1),
+                            onPointerCancel: (_) =>
+                                _touches = math.max(0, _touches - 1),
+                            child: GestureDetector(
+                              onTapDown: (details) =>
+                                  _selectAt(details.localPosition),
+                              onScaleStart: _startTransform,
+                              onScaleUpdate: _updateTransform,
+                              onScaleEnd: _endTransform,
+                              onDoubleTapDown: (details) =>
+                                  _selectAt(details.localPosition),
+                              onDoubleTap: () {
+                                if (_selected?.kind == 'text') {
+                                  unawaited(_text(layer: _selected));
+                                }
+                              },
+                              child: RepaintBoundary(
+                                child: CustomPaint(
+                                  key: const ValueKey('photo-live-preview'),
+                                  painter: PhotoPainter(
+                                    composition: _composition,
+                                    document: _document,
+                                    selectedId: _selectedId,
+                                    showGrid: _tool == 'Crop',
+                                    snapHorizontal: _snapHorizontal,
+                                    snapVertical: _snapVertical,
+                                  ),
                                 ),
                               ),
                             ),
@@ -684,39 +744,183 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           )
         else
           Text(
-            '${_document.width} × ${_document.height}  ·  ${_selected != null ? 'Drag to move · Layers for controls' : 'Offline canvas'}',
+            '${_document.width} × ${_document.height}  ·  ${_selectedId != null ? 'Drag to move · pinch to resize / rotate' : 'Tap an element to move it'}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
       ],
     ),
   );
 
+  Rect? get _selectedRect {
+    if (_selected != null) return photoLayerRect(_selected!, _canvasSize);
+    if (_selectedId != photoBaseSelectionId) return null;
+    final rect = photoImageRect(
+      _document,
+      _composition?.foreground,
+      _canvasSize,
+    );
+    final center =
+        rect.center +
+        Offset(
+          _document.imageX * _canvasSize.width,
+          _document.imageY * _canvasSize.height,
+        );
+    return Rect.fromCenter(
+      center: center,
+      width: rect.width * _document.imageScale,
+      height: rect.height * _document.imageScale,
+    );
+  }
+
+  double get _selectedAngle => _selected?.rotation ?? _document.imageRotation;
+
   void _selectAt(Offset point) {
-    if (_busy) return;
+    if (_busy || _canvasSize.isEmpty) return;
     String? id;
     for (final layer in _document.layers.reversed) {
-      final rect = Rect.fromLTWH(
-        layer.x * _canvasSize.width,
-        layer.y * _canvasSize.height,
-        layer.width * _canvasSize.width,
-        layer.height * _canvasSize.height,
-      );
-      final delta = point - rect.center;
-      final local =
-          rect.center +
-          Offset(
-            delta.dx * math.cos(layer.rotation) +
-                delta.dy * math.sin(layer.rotation),
-            -delta.dx * math.sin(layer.rotation) +
-                delta.dy * math.cos(layer.rotation),
-          );
-      if (rect.inflate(12).contains(local)) {
+      if (photoLayerContains(layer, _canvasSize, point)) {
         id = layer.id;
         break;
       }
     }
+    if (id == null && _document.imagePath != null) {
+      final rect = photoImageRect(
+        _document,
+        _composition?.foreground,
+        _canvasSize,
+      );
+      final center =
+          rect.center +
+          Offset(
+            _document.imageX * _canvasSize.width,
+            _document.imageY * _canvasSize.height,
+          );
+      final target = Rect.fromCenter(
+        center: center,
+        width: rect.width * _document.imageScale,
+        height: rect.height * _document.imageScale,
+      );
+      if (target
+          .inflate(12)
+          .contains(
+            photoRotatePoint(point, center, -_document.imageRotation),
+          )) {
+        id = photoBaseSelectionId;
+      }
+    }
     setState(() => _selectedId = id);
     _canvasFocus.requestFocus();
+  }
+
+  void _captureTransform(
+    Offset focal, {
+    double scale = 1,
+    double rotation = 0,
+  }) {
+    final rect = _selectedRect;
+    if (rect == null) return;
+    _gestureFocal = focal;
+    _gestureCenter = rect.center;
+    _gestureWidth = _selected?.width ?? _document.imageScale;
+    _gestureHeight = _selected?.height ?? _document.imageScale;
+    _gestureAngle = _selectedAngle;
+    _gestureFont = _selected?.fontSize ?? .08;
+    _scaleOrigin = scale;
+    _rotationOrigin = rotation;
+    final vector = focal - rect.center;
+    _handleDistance = math.max(1, vector.distance);
+    _handleAngle = math.atan2(vector.dy, vector.dx);
+  }
+
+  void _startTransform(ScaleStartDetails details) {
+    if (_busy) return;
+    final initial = details.pointerCount <= 1
+        ? _touchStart ?? details.localFocalPoint
+        : details.localFocalPoint;
+    if (details.pointerCount <= 1 || _selectedId == null) {
+      _selectAt(initial);
+    }
+    final rect = _selectedRect;
+    if (rect == null) return;
+    final handle = photoRotatePoint(
+      rect.bottomRight,
+      rect.center,
+      _selectedAngle,
+    );
+    _dragHandle = (initial - handle).distance <= 22;
+    _gesturePointers = details.pointerCount;
+    _gestureChanged = false;
+    _captureTransform(initial);
+  }
+
+  void _updateTransform(ScaleUpdateDetails details) {
+    if (_busy || _selectedId == null || _canvasSize.isEmpty) return;
+    if (_gesturePointers != details.pointerCount) {
+      _gesturePointers = details.pointerCount;
+      _dragHandle = false;
+      _captureTransform(
+        details.localFocalPoint,
+        scale: details.scale,
+        rotation: details.rotation,
+      );
+      return;
+    }
+    var scale = details.scale / _scaleOrigin;
+    var angle = _gestureAngle + details.rotation - _rotationOrigin;
+    var center = _gestureCenter + details.localFocalPoint - _gestureFocal;
+    if (_dragHandle && details.pointerCount == 1) {
+      final vector = details.localFocalPoint - _gestureCenter;
+      scale = vector.distance / _handleDistance;
+      angle = _gestureAngle + math.atan2(vector.dy, vector.dx) - _handleAngle;
+      center = _gestureCenter;
+    }
+    // Snapping works in screen pixels, so its magnetic range feels the same
+    // for a portrait canvas, landscape canvas, photo or an overlay.
+    final target = Offset(_canvasSize.width / 2, _canvasSize.height / 2);
+    final moved =
+        (center - _gestureCenter).distance > .01 ||
+        (scale - 1).abs() > .0001 ||
+        (angle - _gestureAngle).abs() > .0001;
+    if (!moved) return;
+    _snapVertical = (center.dx - target.dx).abs() < 6;
+    _snapHorizontal = (center.dy - target.dy).abs() < 6;
+    if (_snapVertical) center = Offset(target.dx, center.dy);
+    if (_snapHorizontal) center = Offset(center.dx, target.dy);
+    _gestureChanged = true;
+    _change(() {
+      final layer = _selected;
+      if (layer != null) {
+        layer.width = (_gestureWidth * scale).clamp(.02, 5);
+        layer.height = (_gestureHeight * scale).clamp(.02, 5);
+        layer.fontSize = (_gestureFont * scale).clamp(.01, .5);
+        layer.x = (center.dx / _canvasSize.width - layer.width / 2).clamp(
+          -2,
+          2,
+        );
+        layer.y = (center.dy / _canvasSize.height - layer.height / 2).clamp(
+          -2,
+          2,
+        );
+        layer.rotation = angle;
+      } else {
+        _document.imageX = ((center.dx - target.dx) / _canvasSize.width).clamp(
+          -2,
+          2,
+        );
+        _document.imageY = ((center.dy - target.dy) / _canvasSize.height).clamp(
+          -2,
+          2,
+        );
+        _document.imageScale = (_gestureWidth * scale).clamp(.05, 5);
+        _document.imageRotation = angle;
+      }
+    }, commit: false);
+  }
+
+  void _endTransform(ScaleEndDetails details) {
+    if (_gestureChanged) _commit();
+    _gestureChanged = false;
+    if (mounted) setState(() => _snapHorizontal = _snapVertical = false);
   }
 
   KeyEventResult _canvasKey(FocusNode node, KeyEvent event) {
@@ -728,7 +932,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
       return KeyEventResult.handled;
     }
     final key = event.logicalKey;
-    if (_selected == null ||
+    if (_selectedId == null ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isAltPressed ||
         HardwareKeyboard.instance.isMetaPressed) {
@@ -743,7 +947,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
 
   bool _moveSelected(LogicalKeyboardKey key, {double distance = 1}) {
     final layer = _selected;
-    if (layer == null) return false;
+    if (layer == null && _selectedId != photoBaseSelectionId) return false;
     final step = switch (key) {
       LogicalKeyboardKey.arrowLeft => Offset(-distance / _document.width, 0),
       LogicalKeyboardKey.arrowRight => Offset(distance / _document.width, 0),
@@ -753,8 +957,13 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     };
     if (step == Offset.zero) return false;
     _change(() {
-      layer.x = (layer.x + step.dx).clamp(-.8, .95);
-      layer.y = (layer.y + step.dy).clamp(-.8, .95);
+      if (layer != null) {
+        layer.x = (layer.x + step.dx).clamp(-2, 2);
+        layer.y = (layer.y + step.dy).clamp(-2, 2);
+      } else {
+        _document.imageX = (_document.imageX + step.dx).clamp(-2, 2);
+        _document.imageY = (_document.imageY + step.dy).clamp(-2, 2);
+      }
     });
     return true;
   }
@@ -819,6 +1028,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           'Crop' => _crop(),
           'Filters' => _filters(),
           'Text' => _textTools(),
+          'Overlay' => _imageOverlays(),
           'Stickers' => _stickers(),
           'Background' => _background(),
           'Layout' => _layout(),
@@ -993,23 +1203,40 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
   Widget _filters() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _heading('A different feeling', 'Tap a look. Fine tune it in Adjust.'),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: ['Original', 'Noir', 'Warm', 'Cool', 'Fade', 'Vivid', 'Sepia']
-            .map((name) {
-              return ChoiceChip(
-                selected: _document.filter == name,
-                label: Text(name),
-                onSelected: (_) async {
-                  if (mounted) {
-                    _change(() => _document.filter = name);
-                  }
-                },
-              );
-            })
-            .toList(),
+      _heading('Filters', 'Choose a preview, then adjust its strength.'),
+      FilterStrip<String>(
+        options: const [
+          FilterOption(value: 'Original', label: 'Original', group: 'Basic'),
+          FilterOption(value: 'Noir', label: 'Noir', group: 'Mono'),
+          FilterOption(value: 'Warm', label: 'Warm', group: 'Tone'),
+          FilterOption(value: 'Cool', label: 'Cool', group: 'Tone'),
+          FilterOption(value: 'Fade', label: 'Fade', group: 'Tone'),
+          FilterOption(value: 'Vivid', label: 'Vivid', group: 'Tone'),
+          FilterOption(value: 'Sepia', label: 'Sepia', group: 'Mono'),
+        ],
+        selected: _document.filter,
+        enabled: !_busy,
+        strengthEnabled: _document.filter != 'Original',
+        onSelected: (filter) => _change(() => _document.filter = filter),
+        previewBuilder: (filter) {
+          final preview = _document.clone()
+            ..layers = []
+            ..backgroundPath = null
+            ..imageFit = 'cover'
+            ..imageX = 0
+            ..imageY = 0
+            ..imageScale = 1
+            ..imageRotation = 0
+            ..filter = filter
+            ..filterIntensity = 1;
+          return CustomPaint(
+            painter: PhotoPainter(composition: _composition, document: preview),
+          );
+        },
+        intensity: _document.filterIntensity,
+        onIntensityChanged: (value) =>
+            _change(() => _document.filterIntensity = value, commit: false),
+        onIntensityChangeEnd: _commit,
       ),
     ],
   );
@@ -1041,6 +1268,29 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
             'Tap text on the canvas or select it in Layers to change its style.',
           ),
         ),
+    ],
+  );
+
+  Widget _imageOverlays() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Image overlays',
+        'Add an image, drag to place it, pinch to resize or rotate.',
+      ),
+      FilledButton.icon(
+        onPressed: () => _import(overlay: true),
+        icon: const Icon(Icons.add_photo_alternate_outlined),
+        label: const Text('Add image overlay'),
+      ),
+      if (_selected?.kind == 'image') ...[
+        TextButton.icon(
+          onPressed: () => _import(replaceLayer: _selected),
+          icon: const Icon(Icons.photo_library_outlined),
+          label: const Text('Replace layer image'),
+        ),
+        _layerOptions(_selected!),
+      ],
     ],
   );
 
@@ -1098,7 +1348,9 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     children: [
       _heading(
         'Change the scene',
-        'Remove a portrait background on-device, then replace it.',
+        _cutoutLayer != null
+            ? 'Selected image overlay · Auto cutout or brush to erase / restore.'
+            : 'Photo · Auto cutout or brush to erase / restore.',
       ),
       Wrap(
         spacing: 8,
@@ -1106,9 +1358,35 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
         children: [
           ActionChip(
             avatar: const Icon(Icons.auto_fix_high),
-            label: const Text('Remove background'),
+            label: const Text('Auto remove'),
             onPressed: _removeBackground,
           ),
+          ActionChip(
+            avatar: const Icon(Icons.brush_outlined),
+            label: const Text('Manual erase / restore'),
+            onPressed: _refineBackground,
+          ),
+          if (_cutoutLayer?.originalPath != null &&
+              _cutoutLayer!.path != _cutoutLayer!.originalPath)
+            ActionChip(
+              avatar: const Icon(Icons.restore),
+              label: const Text('Restore original overlay'),
+              onPressed: () => _change(
+                () => _cutoutLayer!.path = _cutoutLayer!.originalPath,
+                media: true,
+              ),
+            ),
+          if (_cutoutLayer == null &&
+              _document.originalImagePath != null &&
+              _document.imagePath != _document.originalImagePath)
+            ActionChip(
+              avatar: const Icon(Icons.restore),
+              label: const Text('Restore original photo'),
+              onPressed: () => _change(
+                () => _document.imagePath = _document.originalImagePath,
+                media: true,
+              ),
+            ),
           ActionChip(
             avatar: const Icon(Icons.image_outlined),
             label: const Text('Background image'),
@@ -1134,9 +1412,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _heading(
-        'Made for your next post',
-        'Media fills the canvas without stretching. Layers remain editable.',
+        'Canvas',
+        'Choose the output ratio. Tap the photo and drag to place it.',
       ),
+      if (_selectedId == photoBaseSelectionId) _placementTools(null),
       Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1187,27 +1466,35 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
     children: [
       _heading(
         'Every element, editable',
-        'Select a layer; use sliders or drag it on the canvas.',
+        'Tap an element, drag to position, and pinch to resize or rotate.',
       ),
       if (_document.layers.isEmpty)
         const Text('Add text, shapes or image overlays to start.'),
       Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: _document.layers.reversed
-            .map(
-              (layer) => ChoiceChip(
-                selected: layer.id == _selectedId,
-                label: Text(
-                  layer.kind == 'text' ? layer.text : layer.kind,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onSelected: (_) => setState(() => _selectedId = layer.id),
+        children: [
+          if (_document.imagePath != null)
+            ChoiceChip(
+              label: const Text('Photo'),
+              selected: _selectedId == photoBaseSelectionId,
+              onSelected: (_) =>
+                  setState(() => _selectedId = photoBaseSelectionId),
+            ),
+          ..._document.layers.reversed.map(
+            (layer) => ChoiceChip(
+              selected: layer.id == _selectedId,
+              label: Text(
+                layer.kind == 'text' ? layer.text : layer.kind,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            )
-            .toList(),
+              onSelected: (_) => setState(() => _selectedId = layer.id),
+            ),
+          ),
+        ],
       ),
+      if (_selectedId == photoBaseSelectionId) _placementTools(null),
       if (_selected != null) ...[
         Row(
           children: [
@@ -1314,20 +1601,119 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen>
           ],
         ),
       ],
-      _slider('Horizontal', layer.x, -.8, .95, (v) => layer.x = v),
-      _slider('Vertical', layer.y, -.8, .95, (v) => layer.y = v),
-      _slider('Width', layer.width, .02, 1.5, (v) => layer.width = v),
-      _slider('Height', layer.height, .02, 1.5, (v) => layer.height = v),
-      _slider(
-        'Rotation',
-        layer.rotation,
-        -math.pi,
-        math.pi,
-        (v) => layer.rotation = v,
-      ),
+      _placementTools(layer),
       _slider('Opacity', layer.opacity, 0, 1, (v) => layer.opacity = v),
     ],
   );
+
+  Widget _placementTools(PhotoLayer? layer) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'Drag on the canvas · pinch to resize / rotate · drag the corner handle',
+        ),
+      ),
+      Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          for (final direction in <(String, IconData, LogicalKeyboardKey)>[
+            ('Move left', Icons.arrow_back, LogicalKeyboardKey.arrowLeft),
+            ('Move up', Icons.arrow_upward, LogicalKeyboardKey.arrowUp),
+            ('Move down', Icons.arrow_downward, LogicalKeyboardKey.arrowDown),
+            ('Move right', Icons.arrow_forward, LogicalKeyboardKey.arrowRight),
+          ])
+            IconButton(
+              tooltip: direction.$1,
+              icon: Icon(direction.$2, size: 20),
+              onPressed: () => _moveSelected(direction.$3, distance: 5),
+            ),
+          ActionChip(
+            label: const Text('Center X'),
+            onPressed: () => _change(() {
+              if (layer != null) {
+                layer.x = .5 - layer.width / 2;
+              } else {
+                _document.imageX = 0;
+              }
+            }),
+          ),
+          ActionChip(
+            label: const Text('Center Y'),
+            onPressed: () => _change(() {
+              if (layer != null) {
+                layer.y = .5 - layer.height / 2;
+              } else {
+                _document.imageY = 0;
+              }
+            }),
+          ),
+          IconButton(
+            tooltip: 'Smaller',
+            icon: const Icon(Icons.zoom_out),
+            onPressed: () => _scaleSelected(.9),
+          ),
+          IconButton(
+            tooltip: 'Larger',
+            icon: const Icon(Icons.zoom_in),
+            onPressed: () => _scaleSelected(1.1),
+          ),
+          IconButton(
+            tooltip: 'Rotate left',
+            icon: const Icon(Icons.rotate_left),
+            onPressed: () => _change(() {
+              if (layer != null) {
+                layer.rotation -= math.pi / 12;
+              } else {
+                _document.imageRotation -= math.pi / 12;
+              }
+            }),
+          ),
+          IconButton(
+            tooltip: 'Rotate right',
+            icon: const Icon(Icons.rotate_right),
+            onPressed: () => _change(() {
+              if (layer != null) {
+                layer.rotation += math.pi / 12;
+              } else {
+                _document.imageRotation += math.pi / 12;
+              }
+            }),
+          ),
+          if (layer == null)
+            ActionChip(
+              label: const Text('Reset placement'),
+              onPressed: () => _change(() {
+                _document.imageX = _document.imageY = _document.imageRotation =
+                    0;
+                _document.imageScale = 1;
+              }),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  void _scaleSelected(double factor) => _change(() {
+    final layer = _selected;
+    if (layer == null) {
+      if (_selectedId == photoBaseSelectionId) {
+        _document.imageScale = (_document.imageScale * factor).clamp(.05, 5);
+      }
+      return;
+    }
+    final center = Offset(
+      layer.x + layer.width / 2,
+      layer.y + layer.height / 2,
+    );
+    layer.width = (layer.width * factor).clamp(.02, 5);
+    layer.height = (layer.height * factor).clamp(.02, 5);
+    layer.fontSize = (layer.fontSize * factor).clamp(.01, .5);
+    layer.x = center.dx - layer.width / 2;
+    layer.y = center.dy - layer.height / 2;
+  });
 
   Widget _colorPicker(int selected, ValueChanged<int> onChanged) => Wrap(
     spacing: 6,

@@ -1,92 +1,47 @@
-# FrameLab 1.1 verification
+# FrameLab 1.2 verification
 
-- Static analysis: no issues. Full unit/widget suite: **137 passed**.
-- Android live-edit regression: **2 passed** on API 37 / 16KB emulator. Eight photo and video gesture frames reuse their native source texture/player; ratio changes update on the next frame; video scrubbing performs zero encode jobs.
-- Native thumbnail: bounded JPEG decoded successfully and repeated timestamp uses the cached path.
-- Three release APKs built with default free configuration, version 1.1.0/code 3; signature, ZIP and 64-bit ELF 16KB checks passed.
-- Native Android media suite: **3 passed**, including live-adjustment export. x86_64 main release cold launch: **2547ms**, offline home reviewed in [screenshot](screenshots/v11-release-home.png).
-- Current native export/UI verification and public release evidence: [REALTIME_UPDATE.md](REALTIME_UPDATE.md) and [PUBLISHING.md](PUBLISHING.md).
+Current-source verification record, 1 October 2026. The application is version **1.2.0+4**. All editing is free; Premium, checkout, verification and ads flows have been removed. Historical phase reports and [REALTIME_UPDATE.md](REALTIME_UPDATE.md) describe earlier releases and do not replace these checks.
 
-Run `flutter analyze`, `flutter test`, then Android `integration_test/realtime_editor_test.dart`, `integration_test/media_suite_test.dart` and `integration_test/ui_smoke_test.dart`. Build the ordinary app with `flutter build apk --release --split-per-abi` after integration checks so platform tooling is regenerated. No mock purchase define is used.
-
-The following record is historical1.0 evidence; its paid-access/ads descriptions and APK links describe that earlier release.1.1 supersedes that behavior. Physical-phone/frame-rate/media-quality and native release-mode editing acceptance remain open.
-
----
-
-# Validation and repeatable tests
-
-This is the current-source validation record, updated 30 September 2026. Historical Phase 1 results in `PHASE_01.md` and `ANDROID_SMOKE_RESULTS.json` belong to the earlier foundation APK and do not validate today's editing engines.
-
-## Evidence available
+## Completed checks
 
 | Check | Result and scope |
 |---|---|
-| Full unit/widget suite | `flutter test --no-pub --reporter expanded`: **167 tests passed** on 30 September 2026 (15 seconds test runtime), in `final-unit-tests.log`. |
-| Video editor UI | 12 tests passed, including compact/large-text layout, editing/history, caption dialogs, save retry and preview errors. Included in the full suite; the same 12 passed again after the final empty-state label change (5 seconds), in `final-video-ui-tests.log`. This rerun is a subset, not 12 additional unique tests. |
-| Premium checkout UI | 5 tests passed, including keyboard/dialog lifecycle and local-only purchase. Included in the full suite. |
-| Repository/template/domain targeted run | 41 tests passed in storage integration work; included in the full suite. |
-| Formatting/static analysis | Dart format: **68 files, 0 changed**. `flutter analyze --no-pub`: **no issues** (86.9 seconds), 30 September 2026, in `final-analyze.log`. Targeted analysis of the later `integration_test`/`test_driver` screenshot changes also returned no issues. |
-| Main-app Android release build | `flutter build apk --release --split-per-abi --dart-define=ENABLE_MOCK_PRO=true`: passed, exit 0; Gradle `assembleRelease` 130.3 seconds, in `release-build.log`. All three APKs compile the normal `lib/main.dart`, enable the simulator and use the Android debug test key. |
-| Android media suite | `flutter test integration_test/media_suite_test.dart -d emulator-5554 --no-pub`: **3 tests passed**, exit 0 (31 seconds test runtime; 126 seconds build), in `media-suite.log`. Covers composition, ONNX/media publication/rendering and encoder fallback. |
-| Native ONNX/FFmpeg/MediaStore integration | Passed: actual bundled ONNX inference and alpha variation, PNG publication, six clips with every enabled filter/effect/transition plus crop/speed/mute/music/caption/overlay at 720p, silent portrait 1080p, output probes, cancellation and temporary-file release. |
-| Native composition regression | Passed all six variants: plain, text, overlay, music, wrapped music offset and combined. Decoded audible samples at 0.75–0.90 seconds from a 0.4-second music fixture demonstrate actual repetition and offset wrapping. |
-| Default encoder/fallback | Passed. The emulator hardware attempt produced invalid output; validation rejected it and a software MPEG-4 retry produced a probed 1280×720 export. The returned codec reports this fallback. |
-| Android app UI smoke | `flutter test integration_test/ui_smoke_test.dart -d emulator-5554 --no-pub`: **1 test passed** (9 seconds), in `ui-smoke.log`. Guest home, template browsing and actual photo/video editor routes opened without an account form. Four captures completed; host capture and scoped visual review also passed as described below. |
-| Host UI capture/visual review | `flutter drive --driver=test_driver/ui_screenshots.dart --target=integration_test/ui_smoke_test.dart --dart-define=CAPTURE_SCREENSHOTS=true -d emulator-5554 --no-pub`: passed (9 seconds), in `ui-capture.log`. Four PNG files saved; home, photo-template canvas and empty video editor were visually inspected on this one emulator. This does not cover all templates, native picker/player surfaces or all screen sizes. |
-| Bundled asset integrity | All **6** font/model SHA-256 values match `ASSET_MANIFEST.json`. |
-| APK inspection | All three APK signatures verified with `apksigner`; all three passed `zipalign -c -P 16 -v 4`; all 64-bit native ELF load segments have at least 16 KB alignment. Exact package/signature/library records are in [RELEASE_APK_REPORT.json](RELEASE_APK_REPORT.json). |
-| Main-app release launch | x86_64 release APK installed and cold-launched offline with airplane mode enabled on the same API 37 / 16 KB emulator. `am start -W` status: ok, TotalTime **2584 ms**; filtered log had no AndroidRuntime/Flutter fatal error. [Release home screenshot](screenshots/release-home.png) visually reviewed. This is one cold-launch observation, not a universal performance target or release-mode media-pipeline test. |
-| Complete source handoff | [COMPLETE_SOURCE.md](COMPLETE_SOURCE.md) regenerated: **112** complete source/configuration/notice files, 593913-byte snapshot. Editable files remain authoritative. |
-| Physical-device performance/release qualification | Not performed. |
+| Static analysis | `flutter analyze --no-pub`: **no issues**, `canvas-analyze.log`. |
+| Full unit/widget suite | `flutter test --no-pub`: **173 passed**, `canvas-unit.log`. |
+| Consolidated Android suite | `flutter test integration_test/canvas_suite_test.dart -d emulator-5554`: **7 passed**, `canvas-android.log`; Pixel 8 AVD, Android API 37, x86_64, 16 KB pages. |
+| Photo interaction | Actual pointer drag/pinch/rotation, rotated selection, one-step undo, and next-frame brightness/ratio changes. A real native texture remains the same over 16 gesture frames after deleting its source file. |
+| Video interaction | Clip/text/image direct placement, legacy layout compatibility, decoder/provider reuse, multiple overlays, one-step undo and no automatic encoder jobs during live changes. |
+| Photo pixels and brushes | Shared preview/export painter verifies transforms and filter strength; manual erase/restore, brush history and source-coordinate behavior are tested. |
+| Video cutout and placement | Real Android fixed-region manual cutout preserves an audio track and trim; source bytes remain unchanged. A multi-frame ONNX batch verifies erase/restore and image replacement. Cancellation and moved-video/two-overlay export pixels pass. |
+| Native media regression | Actual local ONNX, composition/music, filters/effects/transitions, 720p/1080p output, MediaStore publication, cancellation and validated hardware/software fallback. |
 
-Media-suite device: Pixel 8 AVD, `sdk_gphone16k_x86_64`, Android API 37, actual page size **16384 bytes**. Measured FFmpeg core version: **n8.1.2**; ONNX Runtime Android: **1.30.0**. An adb memory snapshot was 375740 KB PSS; this is a point-in-time emulator observation, not peak memory or a phone benchmark.
+The seven Android checks comprise **2 cutout/placement + 2 live-edit + 3 native-media checks**. Running component test files again is a rerun, not extra unique coverage. ONNX pipeline assertions on synthetic images do not establish real-world subject/hair quality. Cutout audio is AAC-transcoded; track presence is verified, not bit-identical audio or universal lip-sync accuracy.
 
-Only completed tool/test runs should replace a pending result. A source snapshot or successful build alone does not establish that a media operation works.
+All three normal 1.2 release APKs built and passed signature, ZIP and 64-bit ELF 16 KB checks: [RELEASE_APK_REPORT.json](RELEASE_APK_REPORT.json). ABI version codes are ARM64 2004, ARMv7 1004 and x86_64 4004 (base code 4). The installed x86_64 release cold-launched offline in **3713 ms**, with no fatal Flutter/AndroidRuntime errors: [launch record](CANVAS_ANDROID_RELEASE.json), [reviewed home](screenshots/v12-release-home.png). This is one emulator launch observation; release-mode editing and physical-phone qualification remain open. Public 1.2 download verification remains pending.
 
-## Built main-app APKs
+## Setup and repeatable commands
 
-All files are test builds generated locally on 30 September 2026, with `ENABLE_MOCK_PRO=true` and Android debug signing. The package is `com.framelab.framelab`, version 1.0.0, minimum SDK 24 and target/compile SDK 36. Flutter assigns ABI-specific version codes (ARMv7 1002, ARM64 2002, x86_64 4002).
-
-| APK | Bytes | MiB | SHA-256 |
-|---|---:|---:|---|
-| [ARM64](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-arm64-v8a-release.apk) | 88135415 | 84.1 | `7437a8195f5464c907b89e8b02e2016f68e455e9fa1ca3070cf21c38e6efb43c` |
-| [ARMv7](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-armeabi-v7a-release.apk) | 99415833 | 94.8 | `b90bd954822e5dab2062affda01d8f757e71878e0eb8b37a51ecf4a63f36a1df` |
-| [x86_64](https://github.com/mukunda-jadhav/Video-editing/releases/download/v1.0.0-test/app-x86_64-release.apk) | 98702859 | 94.1 | `2f3382e31de200e0be8d901b6984831c0b5904a0ca9ac05296ac15cb3bb1eb2c` |
-
-Native editing/model/media publication tests above ran in debug integration builds. The release APK was checked for packaging/signature/alignment and main-app launch; release-mode media operations and physical-device quality/performance still need the acceptance matrix.
-
-## Local prerequisites and commands
-
-Use Flutter 3.41.9 / Dart 3.11.5 with the locked dependencies, Android SDK platform 36 and Java 17-compatible Android toolchain. Runtime target is Android API 24+. The Android SDK/emulator/device must be configured locally; no account or paid API is involved.
+Use the locked dependencies with Flutter 3.41.9 / Dart 3.11.5, Android SDK platform 36 and a Java 17-compatible Android toolchain. Runtime target is Android API 24+. Dependency resolution needs internet; editing/model inference uses local media and bundled assets.
 
 ```powershell
-git clone https://github.com/mukunda-jadhav/Video-editing.git
-Set-Location Video-editing
 flutter doctor -v
 flutter pub get
 dart format --output=none --set-exit-if-changed lib test integration_test test_driver
-flutter analyze
-flutter test
-flutter build apk --debug
-```
-
-`scripts/check.ps1 -BuildApk` bundles dependency resolution, source/test/integration-test format checking, analysis, unit/widget tests and debug build. Output APK: `build/app/outputs/flutter-apk/app-debug.apk`.
-
-For a connected emulator or phone, run the consolidated suite once. It registers the individual tests below, so running the whole `integration_test` directory as well would duplicate coverage.
-
-```powershell
+flutter analyze --no-pub
+flutter test --no-pub
 flutter devices
-flutter test integration_test/android_suite_test.dart -d <android-device-id>
-flutter run -d <android-device-id>
+flutter test integration_test/canvas_suite_test.dart -d <android-device-id>
 ```
 
-For an x86_64 emulator with limited storage, temporarily package only its debug ABI:
+The consolidated suite imports `canvas_cutout_test.dart`, `realtime_editor_test.dart` and `media_suite_test.dart`. Use a component file only to isolate a failure. `flutter test` alone does not run Android integration tests.
+
+For an x86_64 emulator with limited storage, package only its debug ABI:
 
 ```powershell
 $previousTestAbi = $env:FRAMELAB_TEST_ABI
 try {
     $env:FRAMELAB_TEST_ABI = 'x86_64'
-    flutter test integration_test/android_suite_test.dart -d <android-device-id> --no-pub
+    flutter test integration_test/canvas_suite_test.dart -d <android-device-id>
 } finally {
     if ($null -eq $previousTestAbi) {
         Remove-Item Env:FRAMELAB_TEST_ABI -ErrorAction SilentlyContinue
@@ -96,67 +51,55 @@ try {
 }
 ```
 
-Use `arm64-v8a` for an ARM64 device if selecting a debug ABI. The override affects debug packaging only; default builds keep all supported ABIs. Do not install an x86_64-only APK on an ARM phone.
+Use `arm64-v8a` for an ARM64 phone when selecting a debug ABI. The override affects debug packaging only. Restore it before ordinary builds.
 
-| Android test | Intended assertions |
-|---|---|
-| `composition_test.dart` | Six native rendering variants: plain, text, image overlay, looped music, wrapped offset and combined; decoded tail samples assert audible repeated music. |
-| `native_media_test.dart` | Model availability/storage, actual ONNX transparent output, image/video MediaStore publication, FFprobe/audio detection, video transforms/filters/effects/transitions/captions/overlay/music, 720p and portrait 1080p output, temporary-file release and cancellation. Uses software MPEG-4 for repeatable emulator execution. |
-| `hardware_export_test.dart` | Default final-encoder selection, including reported H.264 MediaCodec or software fallback, with output probing. |
-| `ui_smoke_test.dart` | Account-free app launch, templates and both editor routes; app-private Flutter composited screenshots for visual inspection. |
-
-`media_suite_test.dart` registers the first three tests; `android_suite_test.dart` adds the UI smoke test. Use the smaller media suite when isolating native rendering, then run `ui_smoke_test.dart` separately if needed. Do not also run the whole directory and count repeated registrations as new coverage.
-
-Fixtures are generated on the device; they are not downloaded. A passing synthetic-media run does **not** prove encoder support on every phone, visual mask quality or long-timeline performance. Media tests publish clearly named `FrameLab_smoke_*` exports to the device gallery; they may be removed there after inspection. UI screenshots are generated under the application's support directory in `qa`. Flutter test may uninstall its temporary test app after completion, so use the screenshot driver to preserve captures on the host before visual review:
+Integration tests install a test entry point. Rebuild the ordinary application with dependency/tooling regeneration enabled before distributing an APK:
 
 ```powershell
-flutter drive --driver=test_driver/ui_screenshots.dart --target=integration_test/ui_smoke_test.dart --dart-define=CAPTURE_SCREENSHOTS=true -d <android-device-id> --no-pub
+flutter build apk --release --split-per-abi
 ```
 
-The driver saves the captured [home](screenshots/phase10-home.png), [template gallery](screenshots/phase10-templates.png), [photo-template editor](screenshots/phase10-photo-editor.png) and [empty video editor](screenshots/phase10-video-editor.png) PNGs under `docs/screenshots/`. The same optional debug ABI override can be used for this command. Captures show Flutter-composited app content; they do not claim native picker or player-surface coverage.
+No mock-purchase define is needed. Skipping dependency/tooling regeneration with `--no-pub` immediately after integration tests can retain a test plugin registrant; rerun the normal build instead of editing generated Android files. Output is under `build/app/outputs/flutter-apk/`. ARM64 is the usual phone APK; x86_64 is for the emulator. The development signing key is a test-distribution key, not completed store signing.
 
-Integration tests replace the installed app with a test entry point. Always rebuild the normal application before handing over an APK:
+Optional UI capture is separate from the seven-check suite:
 
 ```powershell
-flutter build apk --release --split-per-abi --dart-define=ENABLE_MOCK_PRO=true
+flutter drive --driver=test_driver/ui_screenshots.dart --target=integration_test/ui_smoke_test.dart --dart-define=CAPTURE_SCREENSHOTS=true -d <android-device-id>
 ```
 
-After integration tests, use the normal release command above with dependency/tooling regeneration enabled. Skipping it with `--no-pub` can retain the integration-test plugin registrant and make the main-app release compilation fail. Re-run the normal build; do not hand-edit `GeneratedPluginRegistrant.java`.
+Captures show Flutter-composited content; they do not establish native picker/player surface coverage. Record this run and inspect its images before claiming current screenshots. Synthetic fixtures are generated locally. Native tests publish named smoke exports to the gallery for inspection; they may be removed there afterward.
 
-These are test builds with the explicitly enabled simulator. See [PUBLISHING.md](PUBLISHING.md) for public prerelease distribution status. Output files are under `build/app/outputs/flutter-apk/`; `app-arm64-v8a-release.apk` is the usual choice for current Android phones, and `app-x86_64-release.apk` is for the emulator. Release uses a supplied `android/key.properties` keystore when configured, otherwise the development debug key. No store-ready signing or real billing is implied.
+## Coverage guide
 
-Run offline editing checks after installation with networking disabled, then restore the device's previous connectivity settings. Build-time dependency resolution needs internet; editing/model inference does not.
-
-## Automated coverage
-
-| Tests | Purpose |
+| Test files | Purpose |
 |---|---|
-| `app_test.dart` | Guest launch/routes/back, repository loading/error, adaptive home/Projects/Pro and reduced motion. |
-| `photo_document_test.dart`, `photo_renderer_test.dart`, `photo_editor_test.dart` | Recipe serialization/history/access, real raster transforms/alpha, corrupt input and canvas/dialog/layout behavior. |
-| `video_document_test.dart`, `video_render_plan_test.dart` | Trim/split/history/overlap, serialized recipes, every effect/transition plan, caption safety and export sizes. Native execution is tested separately. |
-| `video_editor_test.dart` | Timeline operations/history, caption and rename dialogs, save/preview failures, schema handling and compact/landscape/large-text layouts. |
-| `local_project_repository_test.dart`, `template_catalog_test.dart` | Durable recipe round-trips, corruption/recovery/path validation, template categories/free-Pro access and editable templates. |
-| `entitlement_test.dart`, `premium_repository_test.dart`, `premium_verification_test.dart`, `premium_screen_test.dart` | Feature policy, expiry/end dates, local receipt persistence/restore/reset/failures, test-code policy and Buy-only account flow. |
-| `ads_architecture_test.dart` | Consent/configuration/connectivity, Pro/unknown entitlement, denied placements, failures and late-result disposal. |
-| `media_source_test.dart` | Local media boundaries and rejection of remote media URIs. |
+| `app_test.dart` | Free/offline routes, navigation, loading/error, responsive layout and reduced motion. |
+| `photo_document_test.dart`, `photo_renderer_test.dart`, `photo_editor_test.dart` | Saved recipe defaults, transforms, filters/alpha, direct gestures, native texture reuse, history and dialog/layout behavior. |
+| `background_refine_test.dart` | Source-coordinate erase/restore, pixels, bounded output, brush history and saved brush data. |
+| `video_document_test.dart`, `video_render_plan_test.dart`, `video_editor_test.dart` | Trim/split/history, multiple overlays, drag/pinch, fit/fill positions, filter strength, preview resources and export plans. |
+| `video_cutout_source_test.dart` | Reopening processed clips maps current trim back to original source while retaining current edits. |
+| `local_project_repository_test.dart`, `template_catalog_test.dart` | Durable projects, original/cutout media references, recovery/relinking and freely editable templates. |
+| `media_source_test.dart` | Local-media boundaries and rejection of remote media URIs. |
+| `canvas_cutout_test.dart` | Native video cutout/audio/trim, ONNX brush/replacement batches, cancellation and placed-overlay export pixels. |
+| `realtime_editor_test.dart` | Real Android source texture/player reuse, next-frame live color/ratio response and encode-free scrubbing. |
+| `composition_test.dart`, `native_media_test.dart`, `hardware_export_test.dart` | Native compositions/music, ONNX/publication/export pipeline and validated final encoder/fallback. |
 
-Use the per-phase reports for targeted commands. `flutter test` does not run the Android integration suite automatically.
+Complete implementation and changed files: [CANVAS_UPDATE.md](CANVAS_UPDATE.md), [CANVAS_CHANGED_FILES.txt](CANVAS_CHANGED_FILES.txt) and [COMPLETE_SOURCE.md](COMPLETE_SOURCE.md).
 
-## Manual/device acceptance matrix
+## Physical-device and release acceptance still open
 
-Record device model, Android/API version, RAM, build mode/hash, source media and observed results. Use a profile build for timing; debug timing is not release performance.
+Record device/RAM, Android/API, build mode/hash, source media, observed results and peak resources. Use profile/release builds for timing.
 
 | Workflow | Required evidence |
 |---|---|
-| Guest/offline | Cold launch and photo/video/template editing with no signup, model download or media upload. |
-| Photo | EXIF JPEG, transparent PNG, portrait/product media; each operation, undo/redo, background/layers and exported dimensions/appearance in another viewer. |
-| Video | Landscape/portrait/audio/silent inputs, short/long clips, every operation, all transitions, preview/export parity, sync and preferred hardware encoder/fallback. |
-| Templates | Every category and design, editable text/image/color/layout, save/reopen/export and Pro-denial recovery. |
-| Segmentation | Portrait/product/hair/glass/low contrast/multiple subjects; alpha edges, background replacement, latency, peak memory, cancellation and repeated runs. |
-| Persistence | Relaunch/process kill, interrupted writes, missing-file relink, corruption alongside healthy projects, rename/delete and disk-full behavior. |
-| Premium/ads | No form until Buy, both plans, invalid/expired codes, activation/expiry/restore/reset across restart, no default ads and Pro suppression. |
-| Accessibility | Small/large screens, landscape, 200%+ text, TalkBack focus/labels, keyboard actions, contrast and reduced motion. |
-| Lifecycle/resources | Low/mid/high phones, low storage/memory, repeated exports, background/foreground, cancellation, cold start/frame timings, RAM and thermal/battery use. |
-| Release | ABI/16 KB page-size validation, package/signing, notices/source obligations, store/data-safety and real billing/account/ads only when configured. |
+| Offline/update | Cold launch, editing without accounts/uploads, normal update retains existing local projects. |
+| Photo/filters/templates | EXIF JPEG/transparent PNG, every editing tool, save/reopen/undo, all designs and exported dimensions/appearance in another viewer. |
+| Video/audio | Real landscape/portrait/audio/silent inputs, short/long timelines, all tools/transitions, preview/export quality, sync and encoder compatibility. |
+| Automatic/manual cutout | Portrait/product/hair/glass/low contrast/multiple subjects, moving media, alpha edges, repeated runs, resume/cancel/retry and replacement backgrounds. |
+| Manual video brushes | Fixed source regions only. Verify intended time ranges using split/trim; subject tracking and tracked manual masks remain future work. |
+| Persistence/storage | Process kill, interrupted writes, missing media, corruption, low storage/disk-full and cancelled-work cleanup. |
+| Accessibility | Small/large screens, landscape, 200%+ text, TalkBack, alignment/nudge alternatives, keyboard actions and reduced motion. |
+| Performance/lifecycle | Physical low/mid/high ARM phones: continuous gestures/scrubbing, FPS/frame timings, peak RAM, battery/thermal behavior, background/foreground and long-project stress. |
+| Release/store | Current APK hashes/signatures, all ABI/16 KB checks, release-mode media acceptance, signing/identity, notices/source obligations and store/data-safety qualification. |
 
-Future 4K video and additional premium on-device tools remain unavailable by design; they are not failures of the currently enabled export choices.
+4K export remains future engine/device qualification. The verified test scope does not establish full CapCut parity, tracked manual video masking or universal physical-phone performance.

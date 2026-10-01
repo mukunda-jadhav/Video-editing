@@ -23,3 +23,12 @@ Video recipes store clips, trims, speed, audio, color, canvas and timed layers. 
 EditorHost imports copies into app-private project directories and publishes finished files to Android MediaStore. Storage uses versioned recoverable manifests, atomic writes and bounded metadata. No editing media leaves the device. Riverpod supplies repositories and observable project state; editors receive storage/import/export callbacks.
 
 Resource bounds and physical-device qualification remain in the [master checklist](MASTER_CHECKLIST.md). [REALTIME_UPDATE.md](REALTIME_UPDATE.md) records the 1.1 changes and actual checks.
+
+
+## Canvas and cutout (1.2)
+
+PhotoDocument persists base-media transforms, filter strength and original cutout sources; the same PhotoPainter geometry drives preview, hit testing and PNG export. VideoClip persists fit/fill, normalized translation, zoom, strength and a bounded original cutout recipe. VideoCanvasPlacement defines shared preview/export coordinates. VideoDocument stores up to 12 immutable image overlays and migrates the previous single-overlay field without truncation.
+
+FilterStrip presents cached source previews and separates selection from strength changes. Canvas gestures update recipes in memory each frame and commit one history step on release. Video image decode bounds depend on the source, so dragging/pinching never requests another decode.
+
+BackgroundRefineScreen uses a native image plus vector alpha-mask brushes, with source-normalized points. PNG encoding runs in a worker on Apply. VideoCutoutService extracts storage-aware batches (up to 30 frames), asks the owned Android bridge to reuse ONNX for those frames, then encodes and restores original audio. Manual video strokes are fixed image-space corrections. Processing and cancellation are explicit workflows, separate from live editing. Original sources and brush recipes remain private and locally editable.

@@ -1,7 +1,7 @@
 name: framelab
 description: An offline-first Android photo, video and template studio.
 publish_to: none
-version: 1.1.0+3
+version: 1.2.0+4
 
 environment:
   sdk: '>=3.11.5 <4.0.0'

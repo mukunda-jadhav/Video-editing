@@ -182,8 +182,25 @@ class FfmpegVideoRenderer implements VideoRenderer {
           ((document.duration + musicOffset) / length).ceil() - 1,
         );
       }
-      if (document.overlay != null) {
-        await _checkFile(document.overlay!.path);
+      final overlaySizes = <String, (int, int)>{};
+      for (final overlay in document.overlays) {
+        await _checkFile(overlay.path);
+        if (!overlaySizes.containsKey(overlay.path)) {
+          final session = await FFprobeKit.getMediaInformation(overlay.path);
+          final stream = session
+              .getMediaInformation()
+              ?.getStreams()
+              .where((stream) => stream.getType() == 'video')
+              .firstOrNull;
+          final width = stream?.getWidth() ?? 0;
+          final height = stream?.getHeight() ?? 0;
+          if (width <= 0 || height <= 0) {
+            throw const FormatException(
+              'An overlay image cannot be read. Replace it before exporting.',
+            );
+          }
+          overlaySizes[overlay.path] = (width, height);
+        }
       }
       // Do not retain unbounded logs/statistics across rendering many clips.
       await FFmpegKitConfig.setSessionHistorySize(8);
@@ -304,6 +321,7 @@ class FfmpegVideoRenderer implements VideoRenderer {
             fontFiles: fontFiles,
             encoder: codec,
             preparedMusic: preparedMusic,
+            overlaySizes: overlaySizes,
           ),
           document.duration,
           (p) => report(p, 'Encoding final video'),
@@ -324,6 +342,7 @@ class FfmpegVideoRenderer implements VideoRenderer {
             fontFiles: fontFiles,
             encoder: codec,
             preparedMusic: preparedMusic,
+            overlaySizes: overlaySizes,
           ),
           document.duration,
           (p) => report(p, 'Using compatible software encoder'),

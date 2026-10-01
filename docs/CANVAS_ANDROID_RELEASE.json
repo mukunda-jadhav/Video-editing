@@ -1,0 +1,10 @@
+{
+  "device": "sdk_gphone16k_x86_64",
+  "api": "37",
+  "page_size": "16384",
+  "airplane_mode": "1",
+  "apk": "app-x86_64-release.apk",
+  "launch": "Starting: Intent { cmp=com.framelab.framelab/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: com.framelab.framelab/.MainActivity\nTotalTime: 3713\nWaitTime: 3732\nComplete",
+  "fatal_error_log": "",
+  "scope": "Offline main-app release launch only; native editing/cutout checks ran in debug integration builds."
+}

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:video_player/video_player.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -163,6 +164,8 @@ void main() {
       of: find.byKey(const ValueKey('video-editor-toolbar')),
       matching: find.byType(Scrollable),
     );
+    await tester.ensureVisible(scrollable);
+    await tester.pump();
     tester.state<ScrollableState>(scrollable).position.jumpTo(0);
     await tester.pump();
     await tester.scrollUntilVisible(
@@ -291,9 +294,7 @@ void main() {
       ),
     );
     await tester.pump(const Duration(seconds: 1));
-    await tester.ensureVisible(find.text('Text'));
-    await tester.tap(find.text('Text'));
-    await tester.pump();
+    await selectTool(tester, 'Text');
     await tester.tap(find.text('Add text'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'First caption');
@@ -301,6 +302,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 1));
     expect(saves.last.texts.single.text, 'First caption');
+    await tester.ensureVisible(find.text('First caption').last);
     await tester.tap(find.text('First caption').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'A revised caption');
@@ -447,9 +449,7 @@ void main() {
         ),
       );
       await tester.pump(const Duration(seconds: 1));
-      await tester.ensureVisible(find.text('Text'));
-      await tester.tap(find.text('Text'));
-      await tester.pump();
+      await selectTool(tester, 'Text');
       await tester.ensureVisible(find.text('Add text'));
       await tester.tap(find.text('Add text'));
       await tester.pumpAndSettle();
@@ -517,18 +517,29 @@ void main() {
       final cropBefore = tester
           .widget<Positioned>(find.byKey(const ValueKey('video-live-crop')))
           .width!;
-      final canvasControls = find.descendant(
-        of: find.byKey(const ValueKey('Canvas')),
-        matching: find.byType(Slider),
+      final clipCanvas = find.byKey(const ValueKey('video-drag-clip'));
+      final bounds = tester.getRect(clipCanvas);
+      final firstFinger = await tester.startGesture(
+        bounds.center - const Offset(30, 0),
+        pointer: 1,
       );
-      tester.widget<Slider>(canvasControls.first).onChanged!(2);
+      final secondFinger = await tester.startGesture(
+        bounds.center + const Offset(30, 0),
+        pointer: 2,
+      );
+      await tester.pump();
+      await firstFinger.moveBy(const Offset(-30, 0));
+      await secondFinger.moveBy(const Offset(30, 0));
       await tester.pump();
       expect(
         tester
             .widget<Positioned>(find.byKey(const ValueKey('video-live-crop')))
             .width,
-        closeTo(cropBefore * 2, .01),
+        greaterThan(cropBefore * 1.4),
       );
+      await firstFinger.up();
+      await secondFinger.up();
+      await tester.pump();
       expect(renderer.renderCalls, 0);
       expect(players, hasLength(1));
       await tester.pump(const Duration(seconds: 1));
@@ -692,14 +703,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(renderer.renderCalls, 1);
       await selectTool(tester, 'Filters');
-      await tester.ensureVisible(find.text('Cinema'));
-      await tester.tap(find.text('Cinema'));
+      await tester.ensureVisible(find.text('Film'));
+      await tester.pump();
+      await tester.tap(find.text('Film'));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const ValueKey('filter-Cinema')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('filter-Cinema')));
       await tester.pump(const Duration(seconds: 1));
+      final selectedFilter = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('filter-Cinema')),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
       expect(
-        tester
-            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Cinema'))
-            .selected,
-        isTrue,
+        (selectedFilter.shape as RoundedRectangleBorder).side.color,
+        AppColors.primary,
       );
       expect(renderer.renderCalls, 1);
       expect(find.textContaining('Pro'), findsNothing);
@@ -789,6 +811,200 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('arrival.mp4'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await finish(tester);
+    },
+  );
+  testWidgets(
+    'drag updates video every frame with one undo and the same native decoder',
+    (tester) async {
+      setViewport(tester, const Size(400, 840));
+      final renderer = _FakeRenderer();
+      final saves = <VideoDocument>[];
+      final players = <_FakePlayer>[];
+      await tester.pumpWidget(
+        editor(
+          renderer: renderer,
+          initialData: timeline().toJson(),
+          save: (data, _, _) async => saves.add(VideoDocument.fromJson(data)),
+          playerFactory: (path) {
+            final player = _FakePlayer(path);
+            players.add(player);
+            return player;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final canvas = find.byKey(const ValueKey('video-drag-clip'));
+      final before = tester
+          .widget<Positioned>(find.byKey(const ValueKey('video-live-crop')))
+          .left!;
+      final gesture = await tester.startGesture(
+        tester.getRect(canvas).center - const Offset(60, 20),
+      );
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(const Offset(6, 2));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(
+        tester
+            .widget<Positioned>(find.byKey(const ValueKey('video-live-crop')))
+            .left!,
+        greaterThan(before + 20),
+      );
+      expect(players, hasLength(1));
+      expect(renderer.renderCalls, 0);
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.clips.first.positionX, greaterThan(0));
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.clips.first.positionX, 0);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) => widget is IconButton && widget.tooltip == 'Undo',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(players, hasLength(1));
+      expect(renderer.renderCalls, 0);
+      await finish(tester);
+    },
+  );
+
+  testWidgets(
+    'legacy text dragging becomes centered and undo retains the old project layout',
+    (tester) async {
+      setViewport(tester, const Size(400, 840));
+      final renderer = _FakeRenderer();
+      final saves = <VideoDocument>[];
+      final document = timeline().copyWith(
+        texts: const [
+          VideoText(id: 't', text: 'Drag me', x: .3, y: .4, size: .1),
+        ],
+      );
+      await tester.pumpWidget(
+        editor(
+          renderer: renderer,
+          initialData: document.toJson(),
+          save: (data, _, _) async => saves.add(VideoDocument.fromJson(data)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final layer = find.byKey(const ValueKey('video-layer-text:t'));
+      final before = tester.getCenter(layer);
+      final gesture = await tester.startGesture(before);
+      await gesture.moveBy(const Offset(35, 20));
+      await gesture.moveBy(const Offset(20, 10));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getCenter(layer).dx, greaterThan(before.dx + 20));
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.texts.single.centered, isTrue);
+      expect(renderer.renderCalls, 0);
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.texts.single.centered, isFalse);
+      expect(saves.last.texts.single.x, .3);
+      expect(saves.last.texts.single.y, .4);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) => widget is IconButton && widget.tooltip == 'Undo',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await finish(tester);
+    },
+  );
+  testWidgets(
+    'image pinching reuses its decoded provider and one undo restores its size',
+    (tester) async {
+      setViewport(tester, const Size(400, 840));
+      final directory = Directory.systemTemp.createTempSync(
+        'framelab-overlay-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final file = File('${directory.path}/portrait.png')
+        ..writeAsBytesSync(img.encodePng(img.Image(width: 4, height: 8)));
+      final document = timeline().copyWith(
+        overlays: [
+          VideoOverlay(
+            id: 'image',
+            path: file.path,
+            x: .5,
+            y: .5,
+            width: .35,
+            centered: true,
+          ),
+        ],
+      );
+      final renderer = _FakeRenderer();
+      final saves = <VideoDocument>[];
+      final players = <_FakePlayer>[];
+      await tester.pumpWidget(
+        editor(
+          renderer: renderer,
+          initialData: document.toJson(),
+          save: (data, _, _) async => saves.add(VideoDocument.fromJson(data)),
+          playerFactory: (path) {
+            final player = _FakePlayer(path);
+            players.add(player);
+            return player;
+          },
+        ),
+      );
+      await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+      final layer = find.byKey(const ValueKey('video-layer-overlay:image'));
+      final image = find.descendant(of: layer, matching: find.byType(Image));
+      final provider = tester.widget<Image>(image).image;
+      final beforeSize = tester.getSize(layer);
+      final center = tester.getCenter(layer);
+      final firstFinger = await tester.startGesture(
+        center - const Offset(20, 0),
+        pointer: 1,
+      );
+      final secondFinger = await tester.startGesture(
+        center + const Offset(20, 0),
+        pointer: 2,
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await firstFinger.moveBy(const Offset(-5, 0));
+        await secondFinger.moveBy(const Offset(5, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.widget<Image>(image).image, provider);
+      }
+      expect(tester.getSize(layer).width, greaterThan(beforeSize.width * 1.5));
+      expect(players, hasLength(1));
+      expect(renderer.renderCalls, 0);
+      await firstFinger.up();
+      await secondFinger.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.overlays.single.width, greaterThan(.35));
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(saves.last.overlays.single.width, .35);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) => widget is IconButton && widget.tooltip == 'Undo',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(renderer.renderCalls, 0);
       await finish(tester);
     },
   );

@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../features/photo_editor/presentation/photo_editor_screen.dart';
+import '../features/photo_editor/presentation/image_cutout_screen.dart';
+import '../features/video_editor/presentation/video_cutout_screen.dart';
 import '../features/photo_editor/domain/photo_document.dart';
 import '../features/video_editor/presentation/video_editor_screen.dart';
 import '../features/video_editor/domain/video_document.dart';
@@ -89,6 +91,8 @@ class _EditorHostState extends ConsumerState<EditorHost> {
               'path',
               'imagePath',
               'backgroundPath',
+              'originalImagePath',
+              'originalPath',
               'musicPath',
             ].contains(entry.key) &&
             entry.value is String &&
@@ -258,6 +262,22 @@ class _EditorHostState extends ConsumerState<EditorHost> {
             pickVideos: () => _pick(FileType.video, multiple: true),
             pickAudio: () async => (await _pick(FileType.audio)).firstOrNull,
             pickImage: _pickImage,
+            refineImageBackground: (originalPath, maskPath) =>
+                Navigator.of(context).push<String>(
+                  MaterialPageRoute(
+                    builder: (_) => ImageCutoutScreen(
+                      originalPath: originalPath,
+                      maskPath: maskPath,
+                    ),
+                  ),
+                ),
+            removeVideoBackground: (clip) =>
+                Navigator.of(context).push<VideoClip>(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        VideoCutoutScreen(clip: clip, pickImage: _pickImage),
+                  ),
+                ),
             publishVideo: (path, name) async {
               return ref
                   .read(nativeMediaServiceProvider)

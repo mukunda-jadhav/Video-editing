@@ -8,6 +8,7 @@ class PhotoDocument {
   PhotoDocument({
     this.title = 'Untitled photo',
     this.imagePath,
+    this.originalImagePath,
     this.backgroundPath,
     this.width = 1080,
     this.height = 1080,
@@ -25,11 +26,17 @@ class PhotoDocument {
     this.blur = 0,
     this.filter = 'Original',
     this.imageFit = 'cover',
+    this.imageX = 0,
+    this.imageY = 0,
+    this.imageScale = 1,
+    this.imageRotation = 0,
+    this.filterIntensity = 1,
     List<PhotoLayer>? layers,
   }) : layers = layers ?? [];
 
   String title;
   String? imagePath;
+  String? originalImagePath;
   String? backgroundPath;
   int width;
   int height;
@@ -47,6 +54,13 @@ class PhotoDocument {
   double blur;
   String filter;
   String imageFit;
+
+  /// Position is a canvas-normalized center offset, preserving old recipes.
+  double imageX;
+  double imageY;
+  double imageScale;
+  double imageRotation;
+  double filterIntensity;
   List<PhotoLayer> layers;
 
   factory PhotoDocument.fromJson(Map<String, dynamic> json) {
@@ -66,6 +80,7 @@ class PhotoDocument {
     return PhotoDocument(
       title: json['title'] as String? ?? 'Untitled photo',
       imagePath: json['imagePath'] as String?,
+      originalImagePath: json['originalImagePath'] as String?,
       backgroundPath: json['backgroundPath'] as String?,
       width: _number(json['width'], 1080).round().clamp(64, 4096),
       height: _number(json['height'], 1080).round().clamp(64, 4096),
@@ -83,6 +98,11 @@ class PhotoDocument {
       blur: _number(json['blur'], 0).clamp(0, 30),
       filter: json['filter'] as String? ?? 'Original',
       imageFit: json['imageFit'] == 'contain' ? 'contain' : 'cover',
+      imageX: _number(json['imageX'], 0).clamp(-2, 2),
+      imageY: _number(json['imageY'], 0).clamp(-2, 2),
+      imageScale: _number(json['imageScale'], 1).clamp(.05, 5),
+      imageRotation: _number(json['imageRotation'], 0),
+      filterIntensity: _number(json['filterIntensity'], 1).clamp(0, 1),
       layers: savedLayers
           .whereType<Map<Object?, Object?>>()
           .map((item) => PhotoLayer.fromJson(Map<String, dynamic>.from(item)))
@@ -97,6 +117,7 @@ class PhotoDocument {
     'version': 1,
     'title': title,
     'imagePath': imagePath,
+    'originalImagePath': originalImagePath,
     'backgroundPath': backgroundPath,
     'width': width,
     'height': height,
@@ -114,6 +135,11 @@ class PhotoDocument {
     'blur': blur,
     'filter': filter,
     'imageFit': imageFit,
+    'imageX': imageX,
+    'imageY': imageY,
+    'imageScale': imageScale,
+    'imageRotation': imageRotation,
+    'filterIntensity': filterIntensity,
     'layers': layers.map((layer) => layer.toJson()).toList(),
   };
 
@@ -146,6 +172,7 @@ class PhotoLayer {
     this.rotation = 0,
     this.opacity = 1,
     this.path,
+    this.originalPath,
   });
 
   String id;
@@ -162,16 +189,17 @@ class PhotoLayer {
   double rotation;
   double opacity;
   String? path;
+  String? originalPath;
 
   factory PhotoLayer.fromJson(Map<String, dynamic> json) => PhotoLayer(
     id:
         json['id'] as String? ??
         DateTime.now().microsecondsSinceEpoch.toString(),
     kind: json['kind'] as String? ?? 'text',
-    x: _number(json['x'], .1).clamp(-1, 1),
-    y: _number(json['y'], .4).clamp(-1, 1),
-    width: _number(json['width'], .8).clamp(.01, 2),
-    height: _number(json['height'], .15).clamp(.01, 2),
+    x: _number(json['x'], .1).clamp(-2, 2),
+    y: _number(json['y'], .4).clamp(-2, 2),
+    width: _number(json['width'], .8).clamp(.01, 5),
+    height: _number(json['height'], .15).clamp(.01, 5),
     text: json['text'] as String? ?? '',
     color: (json['color'] as num?)?.toInt() ?? 0xffffffff,
     fontSize: _number(json['fontSize'], .08).clamp(.01, .5),
@@ -180,6 +208,7 @@ class PhotoLayer {
     rotation: _number(json['rotation'], 0),
     opacity: _number(json['opacity'], 1).clamp(0, 1),
     path: json['path'] as String?,
+    originalPath: json['originalPath'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -197,6 +226,7 @@ class PhotoLayer {
     'rotation': rotation,
     'opacity': opacity,
     'path': path,
+    'originalPath': originalPath,
   };
 }
 

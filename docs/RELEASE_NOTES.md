@@ -1,13 +1,13 @@
-# FrameLab 1.1.0-test — free tools and live editing
+# FrameLab 1.2 — Canvas gestures and on-device cutout
 
-This update addresses slow brightness/size adjustments. Photo edits repaint cached image textures, and video adjustments/canvas/layers update the original native video without encoding a preview after each change. Timeline scrubbing seeks the source player directly.
+Tap/drag and pinch photos, video, text and overlays directly. Photo layers also rotate and resize from handles. Selection outlines, snapping, fit/fill and alignment buttons make placement predictable, with one undo step per gesture. The bottom tools use compact labeled controls and dismissible panels.
 
-All editing features are now free. Purchase, email verification, mock Pro, entitlements and advertising subsystems are removed. All 14 templates, five fonts, background removal, filters/effects/transitions, 4096px photo export and 720p/1080p video export remain available offline.
+Filters now show source previews, categories and Strength. They are bundled, free and offline; no account or download setup is required. Video supports 12 independently editable static-image overlays.
 
-The dark home screen prioritizes New project and recent projects. The video editor keeps a preview, timeline and labelled bottom tools. Exact complex transitions/effects and mixed music use explicit composition preview; export always renders the complete recipe. Initial media decoding, segmentation and export still require processing time.
+Automatic and manual Erase/Restore background tools cover photos, image overlays and moving video subjects. Video segmentation processes every frame locally in bounded batches, preserves audio, supports color/image replacement, and has progress/cancel. Original sources and brush recipes remain available for reopening and restoration.
 
-Choose app-arm64-v8a-release.apk for most phones, app-armeabi-v7a-release.apk for 32-bit phones, or app-x86_64-release.apk for the emulator. Android API24+ is required. SHA256SUMS.txt records asset digests. Version code3 and the unchanged test signing key allow an update of the earlier installation. Local projects survive a normal app update; uninstalling removes them.
+Manual video brushes correct fixed image regions across a trimmed clip; they do not track motion. Split/trim clips for different correction ranges. Segmentation quality varies with complex backgrounds, hair and fast movement. Video cutout is up to 1920 px/30 fps; manual photo PNGs are capped at 4096 px/8 MP with downsampling disclosed. 4K and complete CapCut feature/catalog parity are not claimed.
 
-This remains a test prerelease with development signing. Physical-device frame-rate, media-quality and store-release qualification remain open. Source, license notices and detailed checks are in the repository.
+All tools remain free; no paid APIs, media uploads, signup, purchases or ads. Install over the previous version to retain local projects. This test prerelease uses the same development signing key and base version code 4 (ARM64 2004, ARMv7 1004, x86_64 4004); physical-phone/store qualification remains open.
 
-Validation: 137 unit/widget tests, five distinct Android checks, clean analysis, APK signature/ZIP/64-bit ELF16KB inspection and offline x86_64 release launch passed. Live gesture tests retained the native texture/player through eight frames and started zero video encoders.
+Verification results are recorded in docs/CANVAS_UPDATE.md and docs/TESTING.md. Public APK sizes/checksums and anonymous download verification are recorded in docs/PUBLISHED_RELEASE.json.

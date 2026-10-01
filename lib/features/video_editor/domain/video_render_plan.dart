@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'video_document.dart';
+import 'video_realtime_preview.dart';
 
 /// Pure render compiler. User strings are never interpolated into shell
 /// commands. Filter expressions contain only validated numbers and enums;
@@ -16,6 +17,11 @@ class VideoRenderPlan {
     if (document.clips.length > VideoEditingLimits.clips) {
       throw ArgumentError(
         'This project has more than ${VideoEditingLimits.clips} clips. Remove clips or divide it into smaller projects before rendering. Your saved project is unchanged.',
+      );
+    }
+    if (document.overlays.length > VideoEditingLimits.overlays) {
+      throw ArgumentError(
+        'Use at most ${VideoEditingLimits.overlays} image overlays per project. Your saved project is unchanged.',
       );
     }
     if (document.texts.length > VideoEditingLimits.textLayers) {
@@ -47,8 +53,15 @@ class VideoRenderPlan {
           clip.volume < 0 ||
           clip.volume > 2 ||
           !clip.zoom.isFinite ||
-          clip.zoom < 1 ||
-          clip.zoom > 3 ||
+          clip.zoom < .1 ||
+          clip.zoom > 4 ||
+          !clip.positionX.isFinite ||
+          clip.positionX.abs() > 2 ||
+          !clip.positionY.isFinite ||
+          clip.positionY.abs() > 2 ||
+          !clip.filterIntensity.isFinite ||
+          clip.filterIntensity < 0 ||
+          clip.filterIntensity > 1 ||
           !clip.cropX.isFinite ||
           clip.cropX < 0 ||
           clip.cropX > 1 ||
@@ -118,16 +131,34 @@ class VideoRenderPlan {
     '2',
   ];
 
-  static String filterFor(VideoFilter filter) => switch (filter) {
-    VideoFilter.original => 'null',
-    VideoFilter.mono => 'hue=s=0',
-    VideoFilter.vivid =>
-      'hue=s=1.3,lutrgb=r=clip((val-128)*1.08+128\\,0\\,255):g=clip((val-128)*1.08+128\\,0\\,255):b=clip((val-128)*1.08+128\\,0\\,255)',
-    VideoFilter.warm => 'colorchannelmixer=rr=1.08:gg=1.01:bb=0.9',
-    VideoFilter.cool => 'colorchannelmixer=rr=0.9:gg=1.01:bb=1.1',
-    VideoFilter.cinema =>
-      'hue=s=0.78,colorchannelmixer=rr=1.02:gb=0.04:bb=1.08,vignette=PI/5',
-  };
+  static String filterFor(VideoFilter filter, [double intensity = 1]) {
+    final i = intensity.clamp(0, 1);
+    if (i == 0 || filter == VideoFilter.original) return 'null';
+    if (i == 1) {
+      return switch (filter) {
+        VideoFilter.original => 'null',
+        VideoFilter.mono => 'hue=s=0',
+        VideoFilter.vivid =>
+          'hue=s=1.3,lutrgb=r=clip((val-128)*1.08+128\\,0\\,255):g=clip((val-128)*1.08+128\\,0\\,255):b=clip((val-128)*1.08+128\\,0\\,255)',
+        VideoFilter.warm => 'colorchannelmixer=rr=1.08:gg=1.01:bb=0.9',
+        VideoFilter.cool => 'colorchannelmixer=rr=0.9:gg=1.01:bb=1.1',
+        VideoFilter.cinema =>
+          'hue=s=0.78,colorchannelmixer=rr=1.02:gb=0.04:bb=1.08,vignette=PI/5',
+      };
+    }
+    return switch (filter) {
+      VideoFilter.original => 'null',
+      VideoFilter.mono => 'hue=s=${number(1 - i)}',
+      VideoFilter.vivid =>
+        'hue=s=${number(1 + .3 * i)},lutrgb=r=clip((val-128)*${number(1 + .08 * i)}+128\\,0\\,255):g=clip((val-128)*${number(1 + .08 * i)}+128\\,0\\,255):b=clip((val-128)*${number(1 + .08 * i)}+128\\,0\\,255)',
+      VideoFilter.warm =>
+        'colorchannelmixer=rr=${number(1 + .08 * i)}:gg=${number(1 + .01 * i)}:bb=${number(1 - .1 * i)}',
+      VideoFilter.cool =>
+        'colorchannelmixer=rr=${number(1 - .1 * i)}:gg=${number(1 + .01 * i)}:bb=${number(1 + .1 * i)}',
+      VideoFilter.cinema =>
+        'hue=s=${number(1 - .22 * i)},colorchannelmixer=rr=${number(1 + .02 * i)}:gb=${number(.04 * i)}:bb=${number(1 + .08 * i)},vignette=PI/${number(5 / i)}',
+    };
+  }
 
   static String adjustmentFor(VideoClip clip) {
     if (clip.brightness == 0 &&
@@ -169,8 +200,46 @@ class VideoRenderPlan {
       VideoEffect.fade =>
         'fade=t=in:st=0:d=${number(math.min(.4, clip.duration / 3))},fade=t=out:st=${number(math.max(0, clip.duration - .4))}:d=${number(math.min(.4, clip.duration / 3))}',
     };
+    // Legacy crops keep their existing output. Translated/fit clips use a
+    // bounded visible source crop and a black canvas; no huge zoom texture is
+    // allocated in the exporter even at 1080p and 4x zoom.
+    final placement = VideoCanvasPlacement.forClip(
+      clip,
+      canvasWidth: width.toDouble(),
+      canvasHeight: height.toDouble(),
+    );
+    final usePlacement =
+        clip.positionX != 0 ||
+        clip.positionY != 0 ||
+        clip.fit == VideoFit.fit ||
+        clip.zoom < 1;
+    var videoGraph =
+        '[0:v:0]setpts=(PTS-STARTPTS)/${number(clip.speed)},$crop,scale=$width:$height:flags=lanczos,setsar=1,fps=30,settb=AVTB,${filterFor(clip.filter, clip.filterIntensity)},${adjustmentFor(clip)},$effects,format=yuv420p[v]';
+    if (usePlacement) {
+      final left = math.max(0.0, placement.left);
+      final top = math.max(0.0, placement.top);
+      final visibleWidth =
+          math.min(width.toDouble(), placement.left + placement.width) - left;
+      final visibleHeight =
+          math.min(height.toDouble(), placement.top + placement.height) - top;
+      if (visibleWidth < 2 || visibleHeight < 2) {
+        videoGraph =
+            'color=c=black:s=$width:$height:r=30:d=$duration,setsar=1,settb=AVTB[v]';
+      } else {
+        final sourceX = (left - placement.left) / placement.width * clip.width;
+        final sourceY = (top - placement.top) / placement.height * clip.height;
+        final sourceW = visibleWidth / placement.width * clip.width;
+        final sourceH = visibleHeight / placement.height * clip.height;
+        final mirrored = clip.effect == VideoEffect.mirror ? 'hflip,' : '';
+        final canvasEffects = clip.effect == VideoEffect.mirror
+            ? 'null'
+            : effects;
+        videoGraph =
+            '[0:v:0]setpts=(PTS-STARTPTS)/${number(clip.speed)},${mirrored}crop=w=${number(sourceW)}:h=${number(sourceH)}:x=${number(sourceX)}:y=${number(sourceY)},scale=${_even(visibleWidth)}:${_even(visibleHeight)}:flags=lanczos,setsar=1,fps=30,settb=AVTB,${filterFor(clip.filter, clip.filterIntensity)},${adjustmentFor(clip)},pad=w=$width:h=$height:x=${number(left)}:y=${number(top)}:color=black,$canvasEffects,format=yuv420p[v]';
+      }
+    }
     final graph =
-        '[0:v:0]setpts=(PTS-STARTPTS)/${number(clip.speed)},$crop,scale=$width:$height:flags=lanczos,setsar=1,fps=30,settb=AVTB,${filterFor(clip.filter)},${adjustmentFor(clip)},$effects,format=yuv420p[v];'
+        '$videoGraph;'
         '${clip.hasAudio ? '[0:a:0]asetpts=PTS-STARTPTS,${tempo(clip.speed)},volume=${number(clip.volume)},aresample=48000,aformat=channel_layouts=stereo,apad' : 'anullsrc=r=48000:cl=stereo'},atrim=duration=$duration,asetpts=PTS-STARTPTS[a]';
     return [
       ...common,
@@ -240,6 +309,7 @@ class VideoRenderPlan {
     required Map<String, String> fontFiles,
     String encoder = 'h264_mediacodec',
     String? preparedMusic,
+    Map<String, (int, int)> overlaySizes = const {},
   }) {
     if (!['h264_mediacodec', 'mpeg4'].contains(encoder)) {
       throw ArgumentError('Unsupported encoder.');
@@ -251,10 +321,40 @@ class VideoRenderPlan {
     final graph = <String>[];
     var video = '[0:v]';
     var nextInput = 1;
-    final overlay = document.overlay;
-    if (overlay != null) {
-      // Bound looped inputs as well as the output. Otherwise the Android
-      // demuxer can keep reading after the video stream reaches its end.
+    for (var i = 0; i < document.overlays.length; i++) {
+      final overlay = document.overlays[i];
+      final sourceSize = overlaySizes[overlay.path];
+      var resize = 'scale=${_even(width * overlay.width)}:-2,format=rgba';
+      var placementX = overlay.centered
+          ? 'W*${number(overlay.x)}-w/2'
+          : '(W-w)*${number(overlay.x)}';
+      var placementY = overlay.centered
+          ? 'H*${number(overlay.y)}-h/2'
+          : '(H-h)*${number(overlay.y)}';
+      if (sourceSize != null) {
+        final imageWidth = _even(width * overlay.width).toDouble();
+        final imageHeight = imageWidth * sourceSize.$2 / sourceSize.$1;
+        final left = overlay.centered
+            ? width * overlay.x - imageWidth / 2
+            : (width - imageWidth) * overlay.x;
+        final top = overlay.centered
+            ? height * overlay.y - imageHeight / 2
+            : (height - imageHeight) * overlay.y;
+        final visibleLeft = math.max(0.0, left);
+        final visibleTop = math.max(0.0, top);
+        final visibleWidth =
+            math.min(width.toDouble(), left + imageWidth) - visibleLeft;
+        final visibleHeight =
+            math.min(height.toDouble(), top + imageHeight) - visibleTop;
+        // A layer outside the canvas is retained in the recipe, but consumes
+        // no image decoder in export. Partial layers crop before scaling.
+        if (visibleWidth < 2 || visibleHeight < 2) continue;
+        final scale = imageWidth / sourceSize.$1;
+        resize =
+            'format=rgba,crop=w=${number(visibleWidth / scale)}:h=${number(visibleHeight / scale)}:x=${number((visibleLeft - left) / scale)}:y=${number((visibleTop - top) / scale)},scale=${_even(visibleWidth)}:${_even(visibleHeight)}';
+        placementX = number(visibleLeft);
+        placementY = number(visibleTop);
+      }
       args.addAll([
         '-loop',
         '1',
@@ -266,12 +366,12 @@ class VideoRenderPlan {
         overlay.path,
       ]);
       graph.add(
-        '[$nextInput:v]trim=duration=${number(document.duration)},setpts=PTS-STARTPTS,scale=${_even(width * overlay.width)}:-2,format=rgba,colorchannelmixer=aa=${number(overlay.opacity)}[ov]',
+        '[$nextInput:v]trim=duration=${number(document.duration)},setpts=PTS-STARTPTS,$resize,colorchannelmixer=aa=${number(overlay.opacity)}[ov$i]',
       );
       graph.add(
-        '$video[ov]overlay=x=(W-w)*${number(overlay.x)}:y=(H-h)*${number(overlay.y)}:enable=\'between(t,${number(overlay.start)},${number(overlay.end)})\':shortest=1[vov]',
+        '$video[ov$i]overlay=x=$placementX:y=$placementY:enable=\'between(t,${number(overlay.start)},${number(overlay.end)})\':shortest=1[vov$i]',
       );
-      video = '[vov]';
+      video = '[vov$i]';
       nextInput++;
     }
     for (var i = 0; i < document.texts.length; i++) {
@@ -285,7 +385,7 @@ class VideoRenderPlan {
       }
       final color = (text.color & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
       graph.add(
-        '${video}drawtext=fontfile=\'${filterPath(font)}\':textfile=\'${filterPath(file)}\':expansion=none:fontcolor=0x$color:fontsize=${math.max(12, (height * text.size).round())}:x=(w-text_w)*${number(text.x)}:y=(h-text_h)*${number(text.y)}:fix_bounds=1:box=${text.background ? 1 : 0}:boxcolor=black@0.55:boxborderw=10:enable=\'between(t,${number(text.start)},${number(text.end)})\'[vt$i]',
+        '${video}drawtext=fontfile=\'${filterPath(font)}\':textfile=\'${filterPath(file)}\':expansion=none:fontcolor=0x$color:fontsize=${math.max(12, (height * text.size).round())}:x=${text.centered ? 'w*${number(text.x)}-text_w/2' : '(w-text_w)*${number(text.x)}'}:y=${text.centered ? 'h*${number(text.y)}-text_h/2' : '(h-text_h)*${number(text.y)}'}:fix_bounds=${text.centered ? 0 : 1}:box=${text.background ? 1 : 0}:boxcolor=black@0.55:boxborderw=10:enable=\'between(t,${number(text.start)},${number(text.end)})\'[vt$i]',
       );
       video = '[vt$i]';
     }

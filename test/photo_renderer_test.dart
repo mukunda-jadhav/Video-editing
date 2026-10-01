@@ -110,6 +110,34 @@ void main() {
     },
   );
 
+  test(
+    'filter strength interpolates actual pixels while preserving alpha',
+    () async {
+      final original = (await raster(
+        PhotoDocument(filter: 'Warm', filterIntensity: 0),
+      )).getPixel(0, 0);
+      final middle = (await raster(
+        PhotoDocument(filter: 'Warm', filterIntensity: .5),
+      )).getPixel(0, 0);
+      final full = (await raster(
+        PhotoDocument(filter: 'Warm', filterIntensity: 1),
+      )).getPixel(0, 0);
+      expect(middle.r, closeTo((original.r + full.r) / 2, 1));
+      expect(middle.b, closeTo((original.b + full.b) / 2, 1));
+      expect(middle.a, 200);
+    },
+  );
+
+  test('foreground placement leaves correct transparent edges', () async {
+    final result = await raster(
+      PhotoDocument(imageScale: .5, imageX: .2, imageY: 0),
+    );
+    expect(result.getPixel(0, 20).a, 0);
+    expect(result.getPixel(56, 20).a, 200);
+    expect(result.getPixel(30, 20).a, 0);
+    expect(result.getPixel(56, 0).a, 0);
+  });
+
   test('blur softens a real edge', () async {
     final sharp = await raster(PhotoDocument());
     final blurred = await raster(PhotoDocument(blur: 30));
@@ -227,6 +255,11 @@ void main() {
         saturation: .8,
         exposure: .25,
         filter: 'Warm',
+        filterIntensity: .65,
+        imageX: .12,
+        imageY: -.05,
+        imageScale: .7,
+        imageRotation: .25,
         cropLeft: .2,
         cropRight: .9,
         cropTop: .1,
